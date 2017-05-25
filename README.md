@@ -7,6 +7,7 @@ TODO: Delete this and the text above, and describe your gem
 ## Status
 
 [![Build Status](https://travis-ci.org/riboseinc/transcryptor.svg?branch=master)](https://travis-ci.org/riboseinc/transcryptor)
+[![Coverity Scan Build Status](https://img.shields.io/coverity/scan/12786.svg)](https://scan.coverity.com/projects/riboseinc-rnp)
 
 ## Installation
 
