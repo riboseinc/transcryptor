@@ -1,8 +1,102 @@
+# encoding: utf-8
 require "transcryptor/version"
-require "active_record/base"
+require "active_support"
+require "active_record"
 
+# To use Transcryptor, here is a sample migration that showcases this:
+#
+# class ReencryptUsersAndDocumentsWithNewKeys < ActiveRecord::Migration
+#
+#   def transcryptor
+#     Transcryptor.init(self)
+#   end
+#
+#   # +keyifier+ mirrors the functionality provided by the :key Proc in
+#   # attr_encrypted.
+#   # NOTE: Has to return the entire Hash.
+#   #
+#   def old_keyifier
+#     -> opts {
+#       opts[:key] = ENV['old_master_encryption_key'] + opts[:key]
+#       opts
+#     }
+#   end
+#
+#   def new_keyifier
+#     -> opts {
+#       opts[:key] = ENV['new_master_encryption_key'] + opts[:key]
+#       opts
+#     }
+#   end
+#
+#   def table_column_spec
+#     {
+#       users:  {
+#         id_column: :id,
+#         columns: {
+#           email: {
+#             prefix: 'encrypted_',
+#             key: :ekey,
+#           },
+#           birthday: {
+#             prefix: 'encrypted_',
+#             key: :ekey,
+#           },
+#         }
+#       },
+#       documents:  {
+#         id_column: :id,
+#         columns: {
+#           passphrase: {
+#             prefix: 'encrypted_',
+#             key: :ekey,
+#           },
+#         }
+#       },
+#     }
+#   end
+#
+#   def up
+#     transcryptor.updown_migrate(
+#       table_column_spec,
+#       {
+#         algorithm:      'aes-256-cbc',
+#         decode64_value: true,
+#       }, {
+#         algorithm:      'aes-256-gcm',
+#         encode64_iv:    true,
+#         encode64_value: true,
+#         iv: true,
+#       },
+#       old_keyifier,
+#       new_keyifier,
+#     )
+#   end
+#
+#   def down
+#     transcryptor.updown_migrate(
+#       table_column_spec,
+#       {
+#         algorithm:      'aes-256-gcm',
+#         decode64_iv:    true,
+#         decode64_value: true,
+#       }, {
+#         algorithm:      'aes-256-cbc',
+#         iv:             false,
+#         salt:           false,
+#         encode64_value: true,
+#         insecure_mode:  true,
+#       },
+#       new_keyifier,
+#       old_keyifier,
+#     )
+#   end
+#
 module Transcryptor
 
+  # Initialize Transcryptor instance with the migration instance.
+  # This step allows typical migration methods like #execute to be invoked
+  # from this gem.
   def self.init(migration_instance = Kernel.caller)
     Instance.new(migration_instance)
   end
@@ -15,51 +109,6 @@ module Transcryptor
       self.migration_instance = migration_instance
     end
 
-    # def keyifier
-    #   -> opts {
-    #     opts[:key] = INDIGO_CONFIG[:master_encryption_key] + opts[:key]
-    #     opts
-    #   }
-    # end
-    #
-    # def table_column_spec
-    #   {
-    #     users:  %i[answer question],
-    #     spaces: %i[description],
-    #   }
-    # end
-    #
-    # def up
-    #   Transcryptor.updown_migrate(
-    #     table_column_spec,
-    #     {
-    #       algorithm: 'aes-256-cbc',
-    #     }, {
-    #       algorithm: 'aes-256-gcm',
-    #       iv: true,
-    #     },
-    #     keyifier,
-    #     keyifier,
-    #     'encrypted_',
-    #   )
-    # end
-    #
-    # def down
-    #   Transcryptor.updown_migrate(
-    #     table_column_spec,
-    #     {
-    #       algorithm: 'aes-256-gcm',
-    #     }, {
-    #       algorithm: 'aes-256-cbc',
-    #       insecure_mode: true,
-    #     },
-    #     keyifier,
-    #     keyifier,
-    #     'encrypted_',
-    #   )
-    # end
-
-
     def execute *args
       puts "\e[38;5;141m"
       puts puts args
@@ -67,25 +116,40 @@ module Transcryptor
       migration_instance.execute *args
     end
 
+    # Meant to be used by both #up and #down.
+    #
+    # table_column_spec:
+    # {
+    #   table1:  {
+    #     id_column: :id,
+    #     columns: {
+    #       column1: {
+    #         prefix: 'encoded_',
+    #         key: :encryption_key_1,
+    #       },
+    #       column2: {
+    #         prefix: 'xXx_en_ing_',
+    #         key: :encryption_key_2,
+    #         suffix: '_crypted_xXx',
+    #       },
+    #     }
+    #   },
+    #   table2:  {
+    #     id_column: :id,
+    #     columns: {
+    #       column3: {
+    #         prefix: 'encoded_',
+    #         key: :encryption_key_3,
+    #       },
+    #       column4: {
+    #         prefix: 'xXx_en_ing_',
+    #         key: :encryption_key_4,
+    #         suffix: '_crypted_xXx',
+    #       },
+    #     }
+    #   },
+    # }
     def updown_migrate(table_column_spec, old_spec, new_spec, decrypt_opts_fn, encrypt_opts_fn)
-
-      # table_column_spec
-      {
-        table1:  {
-          id_column: :id,
-          columns: {
-            column1: {
-              prefix: 'encoded_',
-              key: :encryption_key_1,
-            },
-            column2: {
-              prefix: 'xXx_en_ing_',
-              key: :encryption_key_2,
-              suffix: '_crypted_xXx',
-            },
-          }
-        },
-      }
 
       # puts "table column spec is:"
       # pp table_column_spec
@@ -154,7 +218,6 @@ module Transcryptor
 
           next if encrypted_attrs.empty?
 
-          # reencrypt(table_name, id, ekey, old_algo, new_algo, reencrypt_params)
           re_encrypt(
             table_name,
             id,
@@ -239,7 +302,7 @@ module Transcryptor
             }"
             acc
           end.flatten
-        )
+        ).map{|s| s.force_encoding('utf-8')}
 
       end.join(', ')
 
@@ -249,7 +312,10 @@ module Transcryptor
         WHERE id = #{ActiveRecord::Base.sanitize(record_id)}
       EOF
 
-      # execute(update_statement)
+      puts puts "\e[38;5;42m"
+      puts update_statement
+      puts "\e[0m"
+      execute(update_statement)
     end
 
     # XXX: MySQL2 specific! TODO: adapt to different backends
@@ -287,6 +353,22 @@ module Transcryptor
     # When given a block, the encryptor params can be modified before passing 
     # over to Encryptor for the encryption process.
     #
+    # +decode64_iv+
+    #   - if +true+, base64-decodes the given +iv+ before passing to Encryptor.
+    # +decode64_salt+
+    #   - if +true+, base64-decodes the given +salt+ before passing to 
+    #   Encryptor.
+    # +decode64_value+
+    #   - if +true+, base64-decodes the given +value+ before passing to 
+    #   Encryptor.
+    #
+    # +encode64_iv+
+    #   - if +true+, base64-encodes the +iv+ output by Encryptor.
+    # +encode64_salt+
+    #   - if +true+, base64-encodes the +salt+ output by Encryptor.
+    # +encode64_value+
+    #   - if +true+, base64-encodes the +value+ output by Encryptor.
+    #
     def enc opts
       value = opts[:value]
       ek    = opts[:key]
@@ -309,15 +391,13 @@ module Transcryptor
       has_iv   = !iv.nil?   &&   iv != ''
       has_salt = !salt.nil? && salt != ''
 
-      iv    = Base64.encode64(iv)    if has_iv   && opts.delete(:encode64_iv)
-      salt  = Base64.encode64(salt)  if has_salt && opts.delete(:encode64_salt)
-      value = Base64.encode64(value) if opts.delete(:encode64_value)
+      # pp "in enc: opts = #{opts.pretty_inspect}"
 
       iv    = Base64.decode64(iv)    if has_iv   && opts.delete(:decode64_iv)
       salt  = Base64.decode64(salt)  if has_salt && opts.delete(:decode64_salt)
       value = Base64.decode64(value) if opts.delete(:decode64_value)
 
-      cryptor_opts = cryptor_opts.merge(iv: iv) if has_iv
+      cryptor_opts = cryptor_opts.merge(iv: iv)     if has_iv
       cryptor_opts = cryptor_opts.merge(salt: salt) if has_salt
       cryptor_opts = cryptor_opts.merge(value: value)
 
@@ -333,7 +413,16 @@ module Transcryptor
         key:   ek,
       }
 
-      result_stuff = result_stuff.merge(iv: iv) if has_iv
+      iv    = Base64.encode64(iv)    if has_iv   && opts.delete(:encode64_iv)
+      salt  = Base64.encode64(salt)  if has_salt && opts.delete(:encode64_salt)
+      value = Base64.encode64(result_stuff[:value]) if opts.delete(:encode64_value)
+
+      result_stuff[:value] = value
+
+      # puts "has iv? #{has_iv}     = #{iv.pretty_inspect}"
+      # puts "has salt? #{has_salt} = #{salt.pretty_inspect}"
+
+      result_stuff = result_stuff.merge(iv: iv)     if has_iv
       result_stuff = result_stuff.merge(salt: salt) if has_salt
       result_stuff
     end
@@ -341,6 +430,34 @@ module Transcryptor
     #
     # When given a block, the encryptor params can be modified before passing 
     # over to Encryptor for the encryption process.
+    #
+    # +insecure_mode+ is automatically set to +true+ if no +iv+ is provided.
+    # It can also be specified by user but will not be able to override the 
+    # +true+ if no +iv+ is given.  This should match what is expected to work 
+    # in Encryptor.
+    #
+    # +decode64_iv+
+    #   - if +true+, base64-decodes the given +iv+ before passing to Encryptor.
+    # +decode64_salt+
+    #   - if +true+, base64-decodes the given +salt+ before passing to 
+    #   Encryptor.
+    # +decode64_value+
+    #   - if +true+, base64-decodes the given +value+ before passing to 
+    #   Encryptor.
+    #
+    # +encode64_iv+
+    #   - if +true+, base64-encodes the given +iv+ before passing to Encryptor.
+    # +encode64_salt+
+    #   - if +true+, base64-encodes the given +salt+ before passing to 
+    #   Encryptor.
+    # +encode64_value+
+    #   - if +true+, base64-encodes the given +value+ before passing to 
+    #   Encryptor.
+    #
+    # NOTE: The operations decode64-* and encode64-* decribed above may cancel 
+    # each other out.
+    #
+    # This is a design uncertainty and may change in a later version.
     #
     def dec opts
       value = opts[:value]
@@ -360,75 +477,40 @@ module Transcryptor
       salt  = Base64.encode64(salt)  if has_salt && opts.delete(:encode64_salt)
       value = Base64.encode64(value) if opts.delete(:encode64_value)
 
-      # ek = (INDIGO_CONFIG[:master_encryption_key] + u.ekey)
       cryptor_opts = {
         value:         value,
         key:           key,
         iv:            iv,
         salt:          salt,
         algorithm:     algo,
+
         # e.g. key length may be too short
         insecure_mode: ! has_iv || opts[:insecure_mode],
       }
 
-      puts "key was: #{key}"
+      # puts "key was: #{key}"
 
       if block_given?
-        puts "wow yay block given."
+        # puts "wow yay block given."
         cryptor_opts = yield cryptor_opts
-        puts "new cryptor_opts is:"
-        pp cryptor_opts
+        # puts "new cryptor_opts is:"
+        # pp cryptor_opts
       end
 
       key = cryptor_opts[:key]
-      puts "after 383 key=#{key.pretty_inspect}"
 
       key = Base64.encode64(key) if opts.delete(:encode64_key)
       key = Base64.decode64(key) if opts.delete(:decode64_key)
 
-      puts "after mmm, key=#{key.pretty_inspect}"
-
       cryptor_opts[:key] = key
 
-      puts "transcryptor#dec,opts=#{cryptor_opts.pretty_inspect}"
+      # puts "transcryptor#dec,opts=#{cryptor_opts.pretty_inspect}"
 
       raise NoKeyException.new("encryption :key is nil") if key.nil?
 
       {
         value: Encryptor.decrypt(cryptor_opts)
       }
-    end
-
-    # like #enc but base64-encodes :value, :iv and :salt.
-    def enc64 opts, &blk
-      result_stuff = enc(opts, &blk)
-      iv           = result_stuff[:iv]
-      salt         = result_stuff[:salt]
-      value        = result_stuff[:value]
-
-      has_iv   = iv   &&   iv != ''
-      has_salt = salt && salt != ''
-
-      result_stuff[:iv]    = Base64.encode64(iv)   if has_iv
-      result_stuff[:salt]  = Base64.encode64(salt) if has_salt
-      result_stuff[:value] = Base64.encode64(value)
-      result_stuff
-    end
-
-    # like #dec but assumes :value, :iv and :salt are base64-encoded.
-    def dec64 opts, &blk
-      new_opts = {}.merge(opts)
-      iv    = new_opts[:iv]
-      salt  = new_opts[:salt]
-      value = new_opts[:value]
-
-      has_iv   = !iv.nil?   &&   iv != ''
-      has_salt = !salt.nil? && salt != ''
-
-      new_opts[:iv]    = Base64.decode64(iv)   if has_iv
-      new_opts[:salt]  = Base64.decode64(salt) if has_salt
-      new_opts[:value] = Base64.decode64(value)
-      dec(new_opts, &blk)
     end
 
   end

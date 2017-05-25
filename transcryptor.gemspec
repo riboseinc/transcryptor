@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
   spec.authors       = ["Ribose Inc."]
   spec.email         = ["open.source@ribose.com"]
 
-  spec.summary       = %q{Assists your everyday re-encryption needs.}
+  spec.summary       = %q{Assists your everyday re-encryption needs, in Rails.}
   spec.homepage      = "https://github.com/riboseinc/transcryptor"
   spec.license       = "MIT"
 
