@@ -4,6 +4,10 @@ Welcome to your new gem! In this directory, you'll find the files you need to be
 
 TODO: Delete this and the text above, and describe your gem
 
+## Status
+
+[![Build Status](https://travis-ci.org/riboseinc/transcryptor.svg?branch=master)](https://travis-ci.org/riboseinc/transcryptor)
+
 ## Installation
 
 Add this line to your application's Gemfile:
