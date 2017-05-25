@@ -48,6 +48,11 @@ describe Transcryptor do
 
     describe '#enc' do
 
+      it "throws error if parameter doesn't look like Hash" do
+        #
+        expect{instance.enc(:stuff)}.to raise_error TypeError
+      end
+
     end
 
     describe '#dec' do
