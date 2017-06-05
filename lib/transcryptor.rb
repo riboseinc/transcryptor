@@ -2,6 +2,7 @@
 require "transcryptor/version"
 require "active_support"
 require "active_record"
+require 'encryptor'
 
 # To use Transcryptor, here is a sample migration that showcases this:
 #
@@ -116,6 +117,10 @@ module Transcryptor
       migration_instance.execute *args
     end
 
+    def sanitize(sql_fragment)
+      ActiveRecord::Base.sanitize(sql_fragment)
+    end
+
     # Meant to be used by both #up and #down.
     #
     # table_column_spec:
@@ -149,37 +154,46 @@ module Transcryptor
     #     }
     #   },
     # }
+    def get_column_names_from(table_name, table_spec)
+      id_name      = table_spec[:id_column]
+      column_specs = table_spec[:columns]
+
+      puts "table name is #{table_name}"
+      puts "table psec is #{table_spec}"
+      res = [ id_name ] + column_specs.map do |column_name, column_spec|
+        column_prefix    = column_spec[:prefix]
+        column_key_field = column_spec[:key]
+        column_suffix    = column_spec[:suffix]
+        full_column_name = :"#{column_prefix}#{column_name}#{column_suffix}"
+
+        [ full_column_name, column_key_field ] + %i[iv salt].reduce([]) do |acc, suffix|
+          extra_column_name = :"#{full_column_name}_#{suffix}"
+          acc << extra_column_name if column_exists?(table_name, extra_column_name)
+          acc
+        end
+      end.flatten.compact.uniq
+      pp res
+      res
+    end
+
     def updown_migrate(table_column_spec, old_spec, new_spec, decrypt_opts_fn, encrypt_opts_fn)
 
       # puts "table column spec is:"
       # pp table_column_spec
 
       table_column_spec.each do |table_name, table_spec|
-        id_name      = table_spec[:id_column]
-        column_specs = table_spec[:columns]
-
-        relevant_column_names =
-          [ id_name ] + column_specs.map do |column_name, column_spec|
-            column_prefix    = column_spec[:prefix]
-            column_key_field = column_spec[:key]
-            column_suffix    = column_spec[:suffix]
-            full_column_name = :"#{column_prefix}#{column_name}#{column_suffix}"
-
-            [ full_column_name, column_key_field ] + %i[iv salt].reduce([]) do |acc, suffix|
-              extra_column_name = :"#{full_column_name}_#{suffix}"
-              acc << extra_column_name if column_exists?(table_name, extra_column_name)
-              acc
-            end
-          end.flatten.compact.uniq
-
-        # puts "relevant column names are:"
-        # pp relevant_column_names
+        column_specs          = table_spec[:columns]
+        relevant_column_names = get_column_names_from(table_name, table_spec)
+        puts "relevant column names are:"
+        pp relevant_column_names
 
         execute(
           "SELECT #{relevant_column_names.join(', ')} FROM `#{table_name}`"
         ).each do |_db_values|
           id, _dontcare = _db_values
 
+          puts 'db values'
+          pp _db_values
           # A map: { :db_field_name => "value" }
           db_values =
             Hash[relevant_column_names.map(&:to_sym).zip(_db_values)]
@@ -263,48 +277,9 @@ module Transcryptor
     # iv and salt.
     #
     def re_encrypt(table_name, record_id, attrs_specs, decrypt_opts_fn, encrypt_opts_fn, column_prefix = 'encrypted_')
-      # puts "attrs_specs:"
-      # pp attrs_specs
-
-      set_statement = attrs_specs.map do |attr_spec|
-
-        old_spec = attr_spec[:old]
-        new_spec = attr_spec[:new]
-
-        plain_stuff    = dec(old_spec) do |opts|
-          decrypt_opts_fn.call(opts)
-        end
-
-        result_stuff   = enc(new_spec.merge(value: plain_stuff[:value])) do |opts|
-          encrypt_opts_fn.call(opts)
-        end
-
-        new_ciphertext = result_stuff[:value]
-        attr_name      = old_spec[:attr_name]
-
-        extra_columns = %i[iv salt].reduce({}) do |acc, suffix|
-          extra_column_name = "#{column_prefix}#{attr_name}_#{suffix}"
-          acc[suffix] = extra_column_name if column_exists?(table_name, extra_column_name)
-          raise Exception.new(
-            "Error: Column #{extra_column_name} doesn't exist " \
-            "but is needed for #{suffix}.  Aborting."
-          ) if result_stuff[suffix] && !acc[suffix]
-          acc
-        end
-
-        (
-          [
-            "`#{column_prefix}#{attr_name}` = #{ActiveRecord::Base.sanitize(new_ciphertext)}"
-          ] +
-          extra_columns.reduce([]) do |acc, (suffix, extra_column_name)|
-            acc << "`#{extra_column_name}` = #{
-              ActiveRecord::Base.sanitize(result_stuff[suffix])
-            }"
-            acc
-          end.flatten
-        ).map{|s| s.force_encoding('utf-8')}
-
-      end.join(', ')
+      set_statement =
+        set_clauses_for_re_encrypt(table_name, record_id, attrs_specs, decrypt_opts_fn, encrypt_opts_fn, column_prefix = 'encrypted_').
+        join(', ')
 
       update_statement = <<-EOF
         UPDATE `#{table_name}`
@@ -316,6 +291,53 @@ module Transcryptor
       puts update_statement
       puts "\e[0m"
       execute(update_statement)
+    end
+
+    def set_clauses_for_re_encrypt(table_name, record_id, attrs_specs, decrypt_opts_fn, encrypt_opts_fn, column_prefix = 'encrypted_')
+      # puts "attrs_specs:"
+      # pp attrs_specs
+
+      attrs_specs.map do |attr_spec|
+
+        old_spec = attr_spec[:old]
+        new_spec = attr_spec[:new]
+
+        plain_stuff    = dec(old_spec) do |opts|
+          decrypt_opts_fn.call(opts)
+        end
+        result_stuff   = enc(new_spec.merge(value: plain_stuff[:value])) do |opts|
+          encrypt_opts_fn.call(opts)
+        end
+
+        new_ciphertext = result_stuff[:value]
+        attr_name      = old_spec[:attr_name]
+
+        extra_columns = %i[iv salt].reduce({}) do |acc, suffix|
+          extra_column_name = "#{column_prefix}#{attr_name}_#{suffix}"
+          acc[suffix] = extra_column_name if column_exists?(table_name, extra_column_name)
+
+          # TODO: perhaps these checks could be done at the beginning, in 
+          # a 'validate_params' method.
+          raise Exception.new(
+            "Error: Column #{extra_column_name} doesn't exist " \
+            "but is needed for #{suffix}.  Aborting."
+          ) if result_stuff[suffix] && !acc[suffix]
+          acc
+        end
+
+        (
+          [
+            "`#{column_prefix}#{attr_name}` = #{sanitize(new_ciphertext)}"
+          ] +
+          extra_columns.reduce([]) do |acc, (suffix, extra_column_name)|
+            acc << "`#{extra_column_name}` = #{
+              sanitize(result_stuff[suffix])
+            }"
+            acc
+          end.flatten
+        ).map{|s| s.force_encoding('utf-8')}
+
+      end
     end
 
     # XXX: MySQL2 specific! TODO: adapt to different backends
@@ -332,8 +354,8 @@ module Transcryptor
           raw_result = execute <<-EOF
             SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
             WHERE
-              column_name  = #{ActiveRecord::Base.sanitize column_name} AND
-              table_name   = #{ActiveRecord::Base.sanitize table_name} AND
+              column_name  = #{sanitize column_name} AND
+              table_name   = #{sanitize table_name} AND
               TABLE_SCHEMA = DATABASE()
           EOF
 
@@ -375,23 +397,23 @@ module Transcryptor
       algo  = opts[:algorithm] || 'aes-256-gcm'
 
       iv = opts[:iv]
-      iv = OpenSSL::Cipher::Cipher.new(algo).random_iv if iv === true
+      iv = OpenSSL::Cipher.new(algo).random_iv if iv === true
 
       salt = opts[:salt]
       salt = SecureRandom.random_bytes if salt === true
+
+      has_iv   = !iv.nil?   &&   iv != ''
+      has_salt = !salt.nil? && salt != ''
 
       cryptor_opts = {
         value:         value,
         key:           ek,
         algorithm:     algo,
         value_present: false, # so as to force regenerating of random_iv @ encryptor
-        insecure_mode: false || opts[:insecure_mode],
+        insecure_mode: !! opts[:insecure_mode] || ! has_iv,
       }
 
-      has_iv   = !iv.nil?   &&   iv != ''
-      has_salt = !salt.nil? && salt != ''
-
-      # pp "in enc: opts = #{opts.pretty_inspect}"
+      puts "in enc: opts = #{opts.pretty_inspect}"
 
       iv    = Base64.decode64(iv)    if has_iv   && opts.delete(:decode64_iv)
       salt  = Base64.decode64(salt)  if has_salt && opts.delete(:decode64_salt)
@@ -408,8 +430,11 @@ module Transcryptor
 
       raise NoKeyException.new("encryption :key is nil") if ek.nil?
 
+      puts "cryptor opts:"
+      pp cryptor_opts
+
       result_stuff = {
-        value: Encryptor.encrypt(cryptor_opts),
+        value: ::Encryptor.encrypt(cryptor_opts),
         key:   ek,
       }
 
@@ -485,7 +510,7 @@ module Transcryptor
         algorithm:     algo,
 
         # e.g. key length may be too short
-        insecure_mode: ! has_iv || opts[:insecure_mode],
+        insecure_mode: ! has_iv || !! opts[:insecure_mode],
       }
 
       # puts "key was: #{key}"
@@ -508,8 +533,11 @@ module Transcryptor
 
       raise NoKeyException.new("encryption :key is nil") if key.nil?
 
+      # puts 'cryptor opts'
+      # pp cryptor_opts
+
       {
-        value: Encryptor.decrypt(cryptor_opts)
+        value: ::Encryptor.decrypt(cryptor_opts)
       }
     end
 
