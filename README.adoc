@@ -1,16 +1,12 @@
 = Transcryptor
-
-Welcome to your new gem! In this directory, you'll find the files you need to 
-be able to package up your Ruby library into a gem. Put your Ruby code in the 
-file `lib/transcryptor`. To experiment with that code, run `bin/console` for an 
-interactive prompt.
-
-TODO: Delete this and the text above, and describe your gem
-
-== Status
+:source-highlighter: pygments
 
 image:https://img.shields.io/travis/riboseinc/transcryptor/master.svg["Build Status", link="https://travis-ci.org/riboseinc/transcryptor"]
 image:https://img.shields.io/coverity/scan/12786.svg["Coverity Scan Build Status", link="https://scan.coverity.com/projects/riboseinc-transcryptor"]
+
+Transcryptor provides utility functions to help migrate records encrypted with 
+https://github.com/attr-encrypted/attr_encrypted[`attr_encrypted`] from one 
+encryption configuration to another.
 
 == Installation
 
@@ -18,24 +14,165 @@ Add this line to your application's Gemfile:
 
 [source,ruby]
 ----
-gem 'transcryptor'
+gem 'transcryptor', github: 'riboseinc/transcryptor'
 ----
 
 And then execute:
 
 ----
-    $ bundle
+bundle
 ----
 
 Or install it yourself as:
 
 ----
-    $ gem install transcryptor
+gem install transcryptor
 ----
 
 == Usage
 
-TODO: Write usage instructions here
+Given:
+
+. you have already set up tables to be encrypted with `attr_encrypted`,
+. you'd like to migrate your columns from:
++
+(`algorithm~1~`, `iv~1~`, `salt~1~`, `key~1~`)
++
+to
++
+(`algorithm~2~`, `iv~2~`, `salt~2~`, `key~2~`)
++
+where:
++
+.. `algorithm` can be `aes-256-cbc`, `aes-256-gcm` or any others that 
+`attr_encrypted` supports,
+.. `salt` can be optional,
+.. `iv` can be optional (!!).
+
+Then:
+
+. Create a migration like so:
++
+[source,ruby]
+----
+class ReencryptUsersAndDocumentsWithNewKeys < ActiveRecord::Migration
+
+  def transcryptor
+    Transcryptor.init(self)
+  end
+
+  # +keyifier+ mirrors the functionality provided by the :key Proc in
+  # attr_encrypted.
+  # NOTE: Has to return the entire Hash.
+  #
+  def old_keyifier
+    -> opts {
+      opts[:key] = ENV['old_master_encryption_key'] + opts[:key]
+      opts
+    }
+  end
+
+  def new_keyifier
+    -> opts {
+      opts[:key] = ENV['new_master_encryption_key'] + opts[:key]
+      opts
+    }
+  end
+
+  # Define the current DB schema for Transcryptor.
+  # Format:
+  # {
+  #   <table_i>: {
+  #     id_column: <the column name for record id>,
+  #     columns: {
+  #       <column_i>: {
+  #         prefix: <attr_encrypted prefix string (optional)>,
+  #         suffix: <attr_encrypted suffix string (optional)>,
+  #         key: <the column storing the key to encrypt column_i>,
+  #       },
+  #     }
+  #   },
+  # }
+  #
+  def table_column_spec
+    {
+      users:  {
+        id_column: :id,
+        columns: {
+          email: {
+            prefix: 'encrypted_',
+            key: :ekey,
+          },
+          birthday: {
+            prefix: 'encrypted_',
+            key: :ekey,
+          },
+        }
+      },
+      documents:  {
+        id_column: :id,
+        columns: {
+          passphrase: {
+            prefix: 'secret_',
+            key: :enc_key,
+          },
+        }
+      },
+    }
+  end
+
+  #
+  # Run transcryptor.updown_migrate() for both #up and #down.
+  # Give it:
+  # - the table-column specification,
+  # - the old encryption configuration (at least any one of: algorithm, iv, 
+  # salt, key)
+  # - the new encryption configuration (at least any one of: algorithm, iv, 
+  # salt, key)
+  # - optional params-modifying Proc before passing to Encryptor.decrypt (used 
+  # by attr_encrypted)
+  # - optional params-modifying Proc before passing to Encryptor.encrypt (used 
+  # by attr_encrypted)
+  #
+  def up
+    transcryptor.updown_migrate(
+      table_column_spec,
+      {
+        algorithm:      'aes-256-cbc',
+        decode64_value: true,
+      }, {
+        algorithm:      'aes-256-gcm',
+        encode64_iv:    true,
+        encode64_value: true,
+        iv: true,
+      },
+      old_keyifier,
+      new_keyifier,
+    )
+  end
+
+  def down
+    transcryptor.updown_migrate(
+      table_column_spec,
+      {
+        algorithm:      'aes-256-gcm',
+        decode64_iv:    true,
+        decode64_value: true,
+      }, {
+        algorithm:      'aes-256-cbc',
+        iv:             false,
+        salt:           false,
+        encode64_value: true,
+        insecure_mode:  true,
+      },
+      new_keyifier,
+      old_keyifier,
+    )
+  end
+
+----
+. Run `bundle exec db:migrate`
+. Done!
 
 == Development
 
@@ -43,18 +180,12 @@ After checking out the repo, run `bin/setup` to install dependencies. Then, run
 `rake spec` to run the tests. You can also run `bin/console` for an interactive 
 prompt that will allow you to experiment.
 
-To install this gem onto your local machine, run `bundle exec rake install`. To 
-release a new version, update the version number in `version.rb`, and then run 
-`bundle exec rake release`, which will create a git tag for the version, push 
-git commits and tags, and push the `.gem` file to 
-[rubygems.org](https://rubygems.org).
-
 == Contributing
 
 Bug reports and pull requests are welcome on GitHub at 
 https://github.com/riboseinc/transcryptor. This project is intended to be a 
 safe, welcoming space for collaboration, and contributors are expected to 
-adhere to the [Contributor Covenant](http://contributor-covenant.org) code of 
+adhere to the http://contributor-covenant.org[Contributor Covenant] code of 
 conduct.
 
 
