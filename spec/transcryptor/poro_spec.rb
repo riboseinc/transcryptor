@@ -2,6 +2,5 @@
 
 require 'spec_helper'
 
-describe Transcryptor do
-
+describe Transcryptor::Poro do
 end
