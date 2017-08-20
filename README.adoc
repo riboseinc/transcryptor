@@ -1,7 +1,8 @@
 = Transcryptor
 
-image:https://img.shields.io/travis/riboseinc/transcryptor/master.svg["Build Status", link="https://travis-ci.org/riboseinc/transcryptor"]
-image:https://img.shields.io/coverity/scan/12786.svg["Coverity Scan Build Status", link="https://scan.coverity.com/projects/riboseinc-transcryptor"]
+image:https://travis-ci.org/riboseinc/transcryptor.svg?branch=master["Build Status", link="https://travis-ci.org/riboseinc/transcryptor"]
+image:https://codeclimate.com/github/riboseinc/transcryptor/badges/gpa.svg["Code Climate Quality", link="https://codeclimate.com/github/riboseinc/transcryptor"]
+image:https://codeclimate.com/github/riboseinc/transcryptor/badges/coverage.svg["Code Climate Quality", link="https://codeclimate.com/github/riboseinc/transcryptor/coverage"]
 
 Transcryptor provides utility functions to help migrate records encrypted with https://github.com/attr-encrypted/attr_encrypted[`attr_encrypted`] from one encryption configuration to another.
 
@@ -28,7 +29,7 @@ gem install transcryptor
 
 == Usage
 
-=== ActiveRecord
+=== ActiveRecord::Migration
 
 You have a `User` with `ssn` attribute which needs to be re-encrypted. `User` has next configuration:
 
