@@ -30,6 +30,10 @@ Gem::Specification.new do |spec|
 
   spec.add_development_dependency "sqlite3", "~> 1.3"
   spec.add_development_dependency "activerecord", "~> 4.0"
+
+  spec.add_development_dependency "dm-sqlite-adapter", "~> 1.0"
+  spec.add_development_dependency "data_mapper", "~> 1.0"
+
   spec.add_development_dependency "simplecov", "~> 0.15.0"
   spec.add_development_dependency "codeclimate-test-reporter", '~> 1.0'
 end
