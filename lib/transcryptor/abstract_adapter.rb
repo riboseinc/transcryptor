@@ -5,6 +5,14 @@ class Transcryptor::AbstractAdapter
     @connection = connection
   end
 
+  def select_rows(_table_name, _columns)
+    raise NotImplementedError, "#{self.class}#select_rows not implemented"
+  end
+
+  def update_row(_table_name, _old_values, _new_values)
+    raise NotImplementedError, "#{self.class}#update_row not implemented"
+  end
+
   private
 
   def select_query(table_name, columns)

@@ -64,6 +64,33 @@ end
 ----
 Run `bundle exec rake db:migrate`. Done!
 
+=== DataMapper::Migration
+
+See link:#activerecordmigration[ActiveRecord::Migration] for initial data. And then `DataMapper` migration is:
+
+[source,ruby]
+----
+require 'dm-migrations/migration_runner'
+
+migration 1, :re_encrypt_user_ssn do
+  up do
+    re_encrypt_column :users, :ssn,
+      { # old configuration of attr_encrypted for :ssn column
+        key: ->(u) { ENV['USER_SSN_ENC_KEY'] },
+        mode: :per_attribute_iv_and_salt,
+        algorithm: 'aes-256-gcm'
+      },
+      { # new configuration of attr_encrypted for :ssn column
+        key: ->(u) { ENV['NEW_USER_SSN_ENC_KEY'] },
+        mode: :per_attribute_iv,
+        algorithm: 'aes-256-cbc'
+      }
+  end
+end
+
+migrate_up!
+----
+
 == Default Options
 
 Default options for old and new configuration are absolutelly the same as it is defined in `attr_encrypted` gem.
