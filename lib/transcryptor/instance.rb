@@ -5,6 +5,34 @@ class Transcryptor::Instance
     @adapter = adapter
   end
 
+  #
+  # Re-Encrypts attribute and stores newly encrypted values in database.
+  #
+  # * <tt>table_name</tt> - Database table name where +attr_encrypted+ attribute is stored.
+  # * <tt>attribute_name</tt> - Name of +attr_encrypted+ attribute,
+  # * +old_opts+ - Configuration of +attr_encrypted+ before re-encryption.
+  # * +new_opts+ - Target configuration of +attr_encrupted+ for given attribute.
+  #
+  # +old_opts+ and +new_opts+ support next options:
+  # * <tt>:prefix</tt> - Prefix for columns which are storing attribute's encrypted data (default: +'encrypted_'+).
+  # * <tt>:suffix</tt> - Suffix for columns which are storing attribute's encrypted data (default: +''+).
+  # * <tt>:if</tt> - Encrypt/decrypt on certain condition (default: <tt>true</tt>).
+  # * <tt>:unless</tt> - Encrypt/decrypt on certain condition (default: <tt>false</tt>).
+  # * <tt>:encode</tt> - Encode attribute string (default: <tt>true</tt>).
+  # * <tt>:encode_iv</tt> - Encode attribute iv string (default: <tt>true</tt>).
+  # * <tt>:encode_salt</tt> - Encode attribute salt string (default: <tt>true</tt>).
+  # * <tt>:default_encoding</tt> - String encoding algorithm (default: +'m'+ (base64)). See Array#pack for more encoding options.
+  # * +:marshal+ - Use +:marshaller+ to encrypt non-string value (default: <tt>false</tt>),
+  # * +:marshaler+ - Class which will be used to serialize object before encryption (default: +Marshal+).
+  # * +:dump_method+ - +:marshaler+ method to dump data (default: <tt>'dump'</tt>).
+  # * +:load_method+ - +:marshaler+ method to load data (default: <tt>'load'</tt>).
+  # * +:encryptor+ - Name of class which is responsible for encryption/decryption of attribute (default: +Encryptor+).
+  # * +:encrypt_method+ - Method which will be called to encrypt data (default: +'encrypt'+).
+  # * +:decrypt_method+ - Method which will be called to decrypt data (default: +'decrypt'+).
+  # * +:mode+ - +attr_encrypted+ encryption mode (default: +:per_attribute_iv+). Available modes: +:per_attribute_iv+, +:per_attribute_iv_and_salt+, and +:single_iv_and_salt+.
+  # * <tt>:algorithm</tt> - Encryption algorithm (default: +'aes-256-gcm'+).
+  #
+
   def re_encrypt(table_name, attribute_name, old_opts, new_opts)
     old_opts.reverse_merge!(transcryptor_default_options)
     new_opts.reverse_merge!(transcryptor_default_options)
