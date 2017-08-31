@@ -36,5 +36,19 @@ describe Transcryptor::ActiveRecord::Adapter do
       expect(active_record_adapter_spec.column_1).to eq('updated')
       expect(active_record_adapter_spec.column_2).to eq(2)
     end
+
+    it 'calls connection.exec_update with :name and :binds params' do
+      expected_sql = "test sql statement"
+      adapter      = subject
+
+      allow(adapter).to receive(:update_query).and_return(expected_sql)
+      expect(adapter.connection).to receive(:exec_update).with(expected_sql, "SQL", [])
+
+      subject.update_row(
+        'active_record_adapter_specs',
+        { 'column_1' => 'value', 'column_2' => 1 },
+        { 'column_1' => 'updated', 'column_2' => 2 }
+      )
+    end
   end
 end

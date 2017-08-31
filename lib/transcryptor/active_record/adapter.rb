@@ -8,7 +8,7 @@ class Transcryptor::ActiveRecord::Adapter < Transcryptor::AbstractAdapter
   def update_row(table_name, old_values, new_values)
     query = update_query(table_name, old_values, new_values)
 
-    connection.exec_update(query)
+    connection.exec_update(query, "SQL", [])
   end
 
   private
