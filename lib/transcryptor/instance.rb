@@ -33,27 +33,30 @@ class Transcryptor::Instance
   # * <tt>:algorithm</tt> - Encryption algorithm (default: +'aes-256-gcm'+).
   #
 
-  def re_encrypt(table_name, attribute_name, old_opts, new_opts)
+  def re_encrypt(table_name, attribute_name, old_opts, new_opts, other_columns = [])
     old_opts.reverse_merge!(transcryptor_default_options)
     new_opts.reverse_merge!(transcryptor_default_options)
 
-    rows = adapter.select_rows(table_name, column_names(attribute_name, old_opts))
+    all_columns = (column_names(attribute_name, old_opts) + other_columns).uniq
 
-    decryptor_class = attr_encrypted_poro_class(attribute_name, old_opts)
-    encryptor_class = attr_encrypted_poro_class(attribute_name, new_opts)
+    rows = adapter.select_rows(table_name, all_columns)
+
+    decryptor_class = attr_encrypted_poro_class(attribute_name, old_opts, all_columns)
+    encryptor_class = attr_encrypted_poro_class(attribute_name, new_opts, all_columns)
 
     rows.each do |old_row|
       decrypted_value = decrypt_value(old_row, attribute_name, decryptor_class, old_opts)
-      new_row = encrypt_value(decrypted_value, attribute_name, encryptor_class, new_opts)
+      new_row = encrypt_value(decrypted_value, old_row, attribute_name, encryptor_class, new_opts)
       adapter.update_row(table_name, old_row, new_row)
     end
   end
 
   private
 
-  def attr_encrypted_poro_class(attribute_name, opts)
+  def attr_encrypted_poro_class(attribute_name, attr_encrypted_opts, needed_columns)
     Class.new(Transcryptor::Poro) do
-      attr_encrypted(attribute_name, opts)
+      attr_accessor(*needed_columns)
+      attr_encrypted(attribute_name, attr_encrypted_opts)
     end
   end
 
@@ -61,8 +64,8 @@ class Transcryptor::Instance
     decryptor_class.new(row).send(attribute_name)
   end
 
-  def encrypt_value(value, attribute_name, encryptor_class, opts)
-    encryptor_class_instance = encryptor_class.new
+  def encrypt_value(value, row, attribute_name, encryptor_class, opts)
+    encryptor_class_instance = encryptor_class.new(row)
     encryptor_class_instance.send("#{attribute_name}=", value)
 
     encryptor_class_instance.instance_values.slice(*column_names(attribute_name, opts))

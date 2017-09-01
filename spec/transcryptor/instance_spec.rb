@@ -3,9 +3,11 @@
 require 'spec_helper'
 
 ActiveRecord::Base.connection.create_table(:instance_specs) do |t|
-  t.string :encrypted_column_1
-  t.string :encrypted_column_1_iv
-  t.string :encrypted_column_1_salt
+  t.integer :lucky_integer, default: 7
+  t.string  :lucky_string,  default: "jackpot!"
+  t.string  :encrypted_column_1
+  t.string  :encrypted_column_1_iv
+  t.string  :encrypted_column_1_salt
 end
 
 class InstanceSpec < ActiveRecord::Base
@@ -58,27 +60,55 @@ describe Transcryptor::Instance do
     end
 
     context 'using lambda expression as a key' do
-      let(:attr_encrypted_config_before) do
-        InstanceSpec.send(
-          :attr_encrypted, :column_1,
-          key: ->(_instance_spec) { 'column_1_key_qwe_qwe_qwe_qwe_qwe' }
-        )
+      context 'with no references to other columns' do
+        let(:attr_encrypted_config_before) do
+          InstanceSpec.send(
+            :attr_encrypted, :column_1,
+            key: ->(_instance_spec) { 'column_1_key_qwe_qwe_qwe_qwe_qwe' }
+          )
+        end
+
+        let(:attr_encrypted_config_after) do
+          InstanceSpec.send(
+            :attr_encrypted, :column_1,
+            key: ->(_instance_spec) { 'column_1_key_asd_asd_asd_asd_asd' }
+          )
+        end
+
+        it 're-encrypts attribute' do
+          subject.re_encrypt(
+            'instance_specs',
+            :column_1,
+            { key: ->(_instance_spec) { 'column_1_key_qwe_qwe_qwe_qwe_qwe' } },
+            { key: ->(_instance_spec) { 'column_1_key_asd_asd_asd_asd_asd' } }
+          )
+        end
       end
 
-      let(:attr_encrypted_config_after) do
-        InstanceSpec.send(
-          :attr_encrypted, :column_1,
-          key: ->(_instance_spec) { 'column_1_key_asd_asd_asd_asd_asd' }
-        )
-      end
+      context 'with references to other columns' do
+        let(:attr_encrypted_config_before) do
+          InstanceSpec.send(
+            :attr_encrypted, :column_1,
+            key: ->(_instance_spec) { 'column_1_key_qwe_qwe_qwe_qwe_qwe' }
+          )
+        end
 
-      it 're-encrypts attribute' do
-        subject.re_encrypt(
-          'instance_specs',
-          :column_1,
-          { key: ->(_instance_spec) { 'column_1_key_qwe_qwe_qwe_qwe_qwe' } },
-          { key: ->(_instance_spec) { 'column_1_key_asd_asd_asd_asd_asd' } }
-        )
+        let(:attr_encrypted_config_after) do
+          InstanceSpec.send(
+            :attr_encrypted, :column_1,
+            key: ->(_instance_spec) { 'column_1_key_asd_asd_asd_asd_as7' }
+          )
+        end
+
+        it 're-encrypts attribute' do
+          subject.re_encrypt(
+            'instance_specs',
+            :column_1,
+            { key: ->(poro) { "column_1_key_qwe_qwe_qwe_qwe_qwe" } },
+            { key: ->(poro) { "column_1_key_asd_asd_asd_asd_as#{poro.lucky_integer}" } },
+            %i[lucky_integer lucky_string]
+          )
+        end
       end
     end
   end
