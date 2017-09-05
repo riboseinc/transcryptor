@@ -55,7 +55,6 @@ class ReEncryptActiveRecordReEncryptStatementSpecColumn1WithExtraColumns < Activ
 end
 
 describe Transcryptor::ActiveRecord::ReEncryptStatement do
-
   before do
     migration.migrate(:up)
     ActiveRecordReEncryptStatementSpec.encrypted_attributes[:column_1][:key] = new_key
@@ -63,6 +62,7 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
 
   after do
     migration.migrate(:down)
+    ActiveRecordReEncryptStatementSpec.delete_all
   end
 
   let(:expected_value) { 'my_value' }
@@ -86,5 +86,4 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
       expect(record.reload.column_1).to eq(expected_value)
     end
   end
-
 end

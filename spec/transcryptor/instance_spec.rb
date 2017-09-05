@@ -16,7 +16,6 @@ end
 describe Transcryptor::Instance do
   let(:adapter) { Transcryptor::ActiveRecord::Adapter.new(ActiveRecord::Base.connection) }
   subject { described_class.new(adapter) }
-  after { InstanceSpec.delete_all }
 
   before do
     attr_encrypted_config_before
@@ -31,6 +30,7 @@ describe Transcryptor::Instance do
       expect(instance_spec.column_1).to eq("value_#{i}")
     end
     InstanceSpec.instance_variable_set(:@encrypted_attributes, {})
+    InstanceSpec.delete_all
   end
 
   describe '#re_encrypt' do
@@ -56,6 +56,32 @@ describe Transcryptor::Instance do
           { key: 'column_1_key_qwe_qwe_qwe_qwe_qwe', mode: :per_attribute_iv },
           { key: 'column_1_key_asd_asd_asd_asd_asd', mode: :per_attribute_iv_and_salt }
         )
+      end
+    end
+
+    context 'from per_attribute_iv_and_salt to per_attribute_iv' do
+      let(:attr_encrypted_config_before) do
+        InstanceSpec.send(
+          :attr_encrypted, :column_1,
+          key: 'column_1_key_qwe_qwe_qwe_qwe_qwe', mode: :per_attribute_iv_and_salt
+        )
+      end
+
+      let(:attr_encrypted_config_after) do
+        InstanceSpec.send(
+          :attr_encrypted, :column_1,
+          key: 'column_1_key_asd_asd_asd_asd_asd', mode: :per_attribute_iv
+        )
+      end
+
+      it 're-encrypts attribute' do
+        subject.re_encrypt(
+          'instance_specs',
+          :column_1,
+          { key: 'column_1_key_qwe_qwe_qwe_qwe_qwe', mode: :per_attribute_iv_and_salt },
+          { key: 'column_1_key_asd_asd_asd_asd_asd', mode: :per_attribute_iv }
+        )
+        expect(InstanceSpec.pluck(:encrypted_column_1_salt)).to eq([nil, nil, nil])
       end
     end
 
