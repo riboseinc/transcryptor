@@ -23,6 +23,8 @@ class Transcryptor::AbstractAdapter
   end
 
   def update_query(table_name, old_values, new_values)
+    old_values.keys.each { |column_name| new_values[column_name] ||= nil }
+
     <<-SQL
       UPDATE #{table_name}
       SET #{equal_expressions(new_values).join(', ')}
