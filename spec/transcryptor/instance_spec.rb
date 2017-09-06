@@ -132,7 +132,7 @@ describe Transcryptor::Instance do
             :column_1,
             { key: ->(poro) { "column_1_key_qwe_qwe_qwe_qwe_qwe" } },
             { key: ->(poro) { "column_1_key_asd_asd_asd_asd_as#{poro.lucky_integer}" } },
-            %i[lucky_integer lucky_string]
+            extra_columns: %i[lucky_integer lucky_string]
           )
         end
       end

@@ -44,7 +44,7 @@ class Transcryptor::AbstractAdapter
     end
   end
 
-  def equal_expression(column, value)
+  def equal_expression(_column, _value)
     raise NotImplementedError, "#{self.class}#equal_expression not implemented"
   end
 end

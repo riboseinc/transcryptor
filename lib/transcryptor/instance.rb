@@ -32,12 +32,17 @@ class Transcryptor::Instance
   # * +:mode+ - +attr_encrypted+ encryption mode (default: +:per_attribute_iv+). Available modes: +:per_attribute_iv+, +:per_attribute_iv_and_salt+, and +:single_iv_and_salt+.
   # * <tt>:algorithm</tt> - Encryption algorithm (default: +'aes-256-gcm'+).
   #
+  # +transcryptor_opts+ supports next options:
+  # * <tt>:extra_columns</tt> - append extra columns on selection (default: [])
+  # * +:before_decrypt+ - pre-hook before decryption and updating the row (default: -> (_old_row, _decryptor_class) {})
+  # * +:after_encrypt+ - post-hook after encryption and updating row (default: -> (_new_row, _encryptor_class) {})
 
-  def re_encrypt(table_name, attribute_name, old_opts, new_opts, other_columns = [])
-    old_opts.reverse_merge!(transcryptor_default_options)
-    new_opts.reverse_merge!(transcryptor_default_options)
+  def re_encrypt(table_name, attribute_name, old_opts, new_opts, transcryptor_opts = {})
+    old_opts.reverse_merge!(attr_encrypted_default_options)
+    new_opts.reverse_merge!(attr_encrypted_default_options)
+    transcryptor_opts.reverse_merge!(transcryptor_default_options)
 
-    all_columns = (column_names(attribute_name, old_opts) + other_columns).uniq
+    all_columns = (column_names(attribute_name, old_opts) + transcryptor_opts[:extra_columns]).uniq
 
     rows = adapter.select_rows(table_name, all_columns)
 
@@ -45,17 +50,22 @@ class Transcryptor::Instance
     encryptor_class = attr_encrypted_poro_class(attribute_name, new_opts, all_columns)
 
     rows.each do |old_row|
+      transcryptor_opts[:before_decrypt].call(old_row, decryptor_class)
+
       decrypted_value = decrypt_value(old_row, attribute_name, decryptor_class, old_opts)
       new_row = encrypt_value(decrypted_value, old_row, attribute_name, encryptor_class, new_opts)
+
       adapter.update_row(table_name, old_row, new_row)
+
+      transcryptor_opts[:after_encrypt].call(new_row, encryptor_class)
     end
   end
 
   private
 
-  def attr_encrypted_poro_class(attribute_name, attr_encrypted_opts, needed_columns)
+  def attr_encrypted_poro_class(attribute_name, attr_encrypted_opts, attributes)
     Class.new(Transcryptor::Poro) do
-      attr_accessor(*needed_columns)
+      attr_accessor(*attributes)
       attr_encrypted(attribute_name, attr_encrypted_opts)
     end
   end
@@ -98,7 +108,7 @@ class Transcryptor::Instance
     column_names
   end
 
-  def transcryptor_default_options
+  def attr_encrypted_default_options
     {
       prefix:            'encrypted_',
       suffix:            '',
@@ -118,5 +128,13 @@ class Transcryptor::Instance
       mode:              :per_attribute_iv,
       algorithm:         'aes-256-gcm'
     }.freeze
+  end
+
+  def transcryptor_default_options
+    {
+      extra_columns: [],
+      before_decrypt: -> (_old_row, _decryptor_class) {},
+      after_encrypt: -> (_new_row, _encryptor_class) {}
+    }
   end
 end
