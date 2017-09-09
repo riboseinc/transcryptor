@@ -13,7 +13,25 @@ class Transcryptor::ActiveRecord::Adapter < Transcryptor::AbstractAdapter
 
   private
 
-  def equal_expressions(values)
-    values.map { |column, value| "#{column} = #{connection.quote(value)}" }
+  def equal_expression(column, value)
+    "#{column} = #{connection.quote(value)}"
   end
+
+  def equal_expressions(values)
+    values.map do |column, value|
+      equal_expression(column, value)
+    end
+  end
+
+  def selection_equal_expressions(values)
+    values.map do |column, value|
+      case value
+      when nil
+        "#{column} IS NULL"
+      else
+        equal_expression(column, value)
+      end
+    end
+  end
+
 end
