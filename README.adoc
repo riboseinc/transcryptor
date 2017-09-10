@@ -91,6 +91,74 @@ end
 migrate_up!
 ----
 
+== Zero Downtime Migration
+
+=== ActiveRecord
+
+Create new columns in database.
+
+[source,ruby]
+----
+class Migration1 < ActiveRecord::Migration
+  def up
+    add_column :users, :encrypted_new_ssn
+    add_column :users, :encrypted_new_ssn_iv
+  end
+end
+----
+
+Add `attr_encrypted` for new columns, `include Transcryptor::ActiveRecord::ZeroDowntime`, and `transcryptor_migrate :old_attribute_name, :new_attribute_name`.
+
+[source,ruby]
+----
+class User < ActiveRecord::Base
+  include Transcryptor::ActiveRecord::ZeroDowntime
+
+  attr_encrypted :ssn, key: '1qwe1qwe1qwe1qwe1qwe1qwe1qwe1qwe', algorithm: 'aes-256-cbc'
+  attr_encrypted :new_ssn, key: '2asd2asd2asd2asd2asd2asd2asd2asd', algorithm: 'aes-256-gcm'
+
+  transcryptor_migrate :ssn, :new_ssn
+end
+----
+
+Create `rake` task for zero downtime migration. Or any other way you prefer.
+
+[source,ruby]
+----
+namespace :zero_downtime
+  desc 'migrate attr_encrypted for User'
+  task user: :environment do
+    User.find_each { |user| user.save! }
+  end
+end
+----
+
+Remove & rename columns in database after finishing of `rake` task.
+
+[source,ruby]
+----
+class Migration2 < ActiveRecord::Migration
+  def up
+    remove_column :users, :encrypted_ssn
+    remove_column :users, :encrypted_ssn_iv
+
+    rename_column :users, :encrypted_new_ssn, :encrypted_ssn
+    rename_column :users, :encrypted_new_ssn_iv, :encrypted_ssn_iv
+  end
+end
+----
+
+Move `attr_encrypted` configuration to original attribute and remove all migration code.
+
+[source,ruby]
+----
+class User < ActiveRecord::Base
+  attr_encrypted :ssn, key: '2asd2asd2asd2asd2asd2asd2asd2asd', algorithm: 'aes-256-gcm'
+end
+----
+
+Done!
+
 == Default Options
 
 Default options for old and new configuration are absolutelly the same as it is defined in `attr_encrypted` gem.
