@@ -13,29 +13,9 @@ class Transcryptor::DataMapper::Adapter < Transcryptor::AbstractAdapter
 
   private
 
-  def equal_expression(conn, column, value)
-    "#{column} = #{conn.quote_value(value)}"
-  end
-
-  def equal_expressions(values)
+  def equal_expression(column, value)
     connection.send(:with_connection) do |conn|
-      values.map do |column, value|
-        equal_expression(conn, column, value)
-      end
+      "#{column} = #{conn.quote_value(value)}"
     end
   end
-
-  def selection_equal_expressions(values)
-    connection.send(:with_connection) do |conn|
-      values.map do |column, value|
-        case value
-        when nil
-          "#{column} IS NULL"
-        else
-          equal_expression(conn, column, value)
-        end
-      end
-    end
-  end
-
 end

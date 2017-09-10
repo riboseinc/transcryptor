@@ -28,16 +28,23 @@ class Transcryptor::AbstractAdapter
     <<-SQL
       UPDATE #{table_name}
       SET #{equal_expressions(new_values).join(', ')}
-      WHERE #{selection_equal_expressions(old_values).join(' AND ')}
+      WHERE #{select_equal_expressions(old_values).join(' AND ')}
     SQL
   end
 
-  def equal_expressions(_values)
-    raise NotImplementedError, "#{self.class}#equal_expressions not implemented"
+  def equal_expressions(values)
+    values.map do |column, value|
+      equal_expression(column, value)
+    end
   end
 
-  def selection_equal_expressions(_values)
-    raise NotImplementedError, "#{self.class}#selection_equal_expressions not implemented"
+  def select_equal_expressions(values)
+    values.map do |column, value|
+      value.nil? ? "#{column} IS NULL" : equal_expression(column, value)
+    end
   end
 
+  def equal_expression(column, value)
+    raise NotImplementedError, "#{self.class}#equal_expression not implemented"
+  end
 end
