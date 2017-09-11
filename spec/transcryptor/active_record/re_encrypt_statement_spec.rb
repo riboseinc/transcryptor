@@ -131,8 +131,8 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
         old_configs,
         { key: ->(o) { '2asd2asd2asd2asd2asd2asd2asd2asd'.gsub(/2/, o.lucky_integer.to_s) } },
         extra_columns: %i[lucky_integer],
-        before_decrypt: prehook,
-        after_encrypt:  posthook,
+        before_decrypt: before_decrypt,
+        after_encrypt:  after_encrypt,
       ]
     end
 
@@ -146,26 +146,27 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
       ]
     end
 
-    let(:prehook) do
+    let(:before_decrypt) do
       -> (old_row, decryptor_class) { before_decrypt_probe.call(old_row, decryptor_class) }
     end
 
-    let(:posthook) do
-      -> (new_row, encryptor_class) { after_encrypt_probe.call(new_row, encryptor_class) }
+    let(:after_encrypt) do
+      -> (decrypted_value, new_row, encryptor_class) { after_encrypt_probe.call(decrypted_value, new_row, encryptor_class) }
     end
 
     it 'calls before_decrypt hook' do
       expect(before_decrypt_probe).to have_received(:call).with(
         hash_including("encrypted_#{column_name}", "encrypted_#{column_name}_iv"),
         kind_of(Class)
-      ).exactly(ActiveRecordReEncryptStatementSpec.count).times
+      ).exactly(table_class.count).times
     end
 
     it 'calls after_encrypt hook' do
       expect(after_encrypt_probe).to have_received(:call).with(
+        kind_of(String),
         hash_including("encrypted_#{column_name}", "encrypted_#{column_name}_iv"),
         kind_of(Class)
-      ).exactly(ActiveRecordReEncryptStatementSpec.count).times
+      ).exactly(table_class.count).times
     end
   end
 end

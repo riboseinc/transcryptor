@@ -11,9 +11,9 @@ class Transcryptor::Instance
   # * <tt>table_name</tt> - Database table name where +attr_encrypted+ attribute is stored.
   # * <tt>attribute_name</tt> - Name of +attr_encrypted+ attribute,
   # * +old_opts+ - Configuration of +attr_encrypted+ before re-encryption.
-  # * +new_opts+ - Target configuration of +attr_encrupted+ for given attribute.
+  # * +new_opts+ - Target configuration of +attr_encrypted+ for given attribute.
   #
-  # +old_opts+ and +new_opts+ support next options:
+  # +old_opts+ and +new_opts+ support the following options:
   # * <tt>:prefix</tt> - Prefix for columns which are storing attribute's encrypted data (default: +'encrypted_'+).
   # * <tt>:suffix</tt> - Suffix for columns which are storing attribute's encrypted data (default: +''+).
   # * <tt>:if</tt> - Encrypt/decrypt on certain condition (default: <tt>true</tt>).
@@ -32,10 +32,10 @@ class Transcryptor::Instance
   # * +:mode+ - +attr_encrypted+ encryption mode (default: +:per_attribute_iv+). Available modes: +:per_attribute_iv+, +:per_attribute_iv_and_salt+, and +:single_iv_and_salt+.
   # * <tt>:algorithm</tt> - Encryption algorithm (default: +'aes-256-gcm'+).
   #
-  # +transcryptor_opts+ supports next options:
+  # +transcryptor_opts+ supports the following options:
   # * <tt>:extra_columns</tt> - append extra columns on selection (default: [])
   # * +:before_decrypt+ - pre-hook before decryption and updating the row (default: -> (_old_row, _decryptor_class) {})
-  # * +:after_encrypt+ - post-hook after encryption and updating row (default: -> (_new_row, _encryptor_class) {})
+  # * +:after_encrypt+ - post-hook after encryption and updating row (default: -> (_decrypted_value, _new_row, _encryptor_class) {})
 
   def re_encrypt(table_name, attribute_name, old_opts, new_opts, transcryptor_opts = {})
     old_opts.reverse_merge!(attr_encrypted_default_options)
@@ -52,12 +52,12 @@ class Transcryptor::Instance
     rows.each do |old_row|
       transcryptor_opts[:before_decrypt].call(old_row, decryptor_class)
 
-      decrypted_value = decrypt_value(old_row, attribute_name, decryptor_class, old_opts)
-      new_row = encrypt_value(decrypted_value, old_row, attribute_name, encryptor_class, new_opts)
+      decrypted_value = decrypt_value(old_row, attribute_name, decryptor_class)
+      new_row = encrypt_value(decrypted_value, old_row, attribute_name, encryptor_class, transcryptor_opts[:extra_columns])
 
       adapter.update_row(table_name, old_row, new_row)
 
-      transcryptor_opts[:after_encrypt].call(new_row, encryptor_class)
+      transcryptor_opts[:after_encrypt].call(decrypted_value, new_row, encryptor_class)
     end
   end
 
@@ -70,15 +70,19 @@ class Transcryptor::Instance
     end
   end
 
-  def decrypt_value(row, attribute_name, decryptor_class, _opts)
+  def decrypt_value(row, attribute_name, decryptor_class)
     decryptor_class.new(row).send(attribute_name)
   end
 
-  def encrypt_value(value, row, attribute_name, encryptor_class, opts)
+  def encrypt_value(value, row, attribute_name, encryptor_class, extra_columns)
     encryptor_class_instance = encryptor_class.new(row)
     encryptor_class_instance.send("#{attribute_name}=", value)
+    opts = encryptor_class.encrypted_attributes[attribute_name]
 
-    encryptor_class_instance.instance_values.slice(*column_names(attribute_name, opts))
+    all_columns =
+      (column_names(attribute_name, opts) + extra_columns).uniq.map(&:to_s)
+
+    encryptor_class_instance.instance_values.slice(*all_columns)
   end
 
   def encrypted_column(attribute_name, opts)
@@ -126,7 +130,7 @@ class Transcryptor::Instance
       encrypt_method:    'encrypt',
       decrypt_method:    'decrypt',
       mode:              :per_attribute_iv,
-      algorithm:         'aes-256-gcm'
+      algorithm:         'aes-256-gcm',
     }.freeze
   end
 
@@ -134,7 +138,7 @@ class Transcryptor::Instance
     {
       extra_columns: [],
       before_decrypt: -> (_old_row, _decryptor_class) {},
-      after_encrypt: -> (_new_row, _encryptor_class) {}
+      after_encrypt: -> (_decrypted_value, _new_row, _encryptor_class) {},
     }
   end
 end

@@ -145,6 +145,28 @@ describe Transcryptor::Instance do
             transcryptor_opts
           )
         end
+
+        context 'and with hooks to check encrypted value equality' do
+
+          it 're-encrypts attribute' do
+            subject.re_encrypt(
+              table_name,
+              column_name,
+              old_configs,
+              new_configs,
+              transcryptor_opts.merge(
+                posthook: proc do |decrypted_value, new_row, encryptor_class|
+                  begin
+                    de_encrypted_value =
+                      encryptor_class.new(new_row).send(column_name)
+                  rescue => e
+                    raise e if de_encrypted_value != decrypted_value
+                  end
+                end
+              )
+            )
+          end
+        end
       end
 
     end
