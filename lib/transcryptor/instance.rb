@@ -42,18 +42,18 @@ class Transcryptor::Instance
     new_opts.reverse_merge!(attr_encrypted_default_options)
     transcryptor_opts.reverse_merge!(transcryptor_default_options)
 
-    all_columns = (column_names(attribute_name, old_opts) + transcryptor_opts[:extra_columns]).uniq
+    column_names_with_extra =  column_names_with_extra(attribute_name, old_opts, transcryptor_opts)
+    attr_encrypted_column_names = attr_encrypted_column_names(attribute_name, new_opts, old_opts)
+    column_names_to_nilify = column_names_to_nilify(attribute_name, new_opts, old_opts)
 
-    rows = adapter.select_rows(table_name, all_columns)
+    decryptor_class = attr_encrypted_poro_class(attribute_name, old_opts, column_names_with_extra)
+    encryptor_class = attr_encrypted_poro_class(attribute_name, new_opts, column_names_with_extra)
 
-    decryptor_class = attr_encrypted_poro_class(attribute_name, old_opts, all_columns)
-    encryptor_class = attr_encrypted_poro_class(attribute_name, new_opts, all_columns)
-
-    rows.each do |old_row|
+    adapter.select_rows(table_name, column_names_with_extra).each do |old_row|
       transcryptor_opts[:before_decrypt].call(old_row, decryptor_class)
 
       decrypted_value = decrypt_value(old_row, attribute_name, decryptor_class)
-      new_row = encrypt_value(decrypted_value, old_row, attribute_name, encryptor_class, transcryptor_opts[:extra_columns])
+      new_row = encrypt_value(decrypted_value, old_row, attribute_name, encryptor_class, attr_encrypted_column_names, column_names_to_nilify)
 
       adapter.update_row(table_name, old_row, new_row)
 
@@ -74,15 +74,15 @@ class Transcryptor::Instance
     decryptor_class.new(row).send(attribute_name)
   end
 
-  def encrypt_value(value, row, attribute_name, encryptor_class, extra_columns)
-    encryptor_class_instance = encryptor_class.new(row)
+  def encrypt_value(value, old_row, attribute_name, encryptor_class, attr_encrypted_column_names, column_names_to_nilify)
+    encryptor_class_instance = encryptor_class.new(old_row)
     encryptor_class_instance.send("#{attribute_name}=", value)
-    opts = encryptor_class.encrypted_attributes[attribute_name]
 
-    all_columns =
-      (column_names(attribute_name, opts) + extra_columns).uniq.map(&:to_s)
-
-    encryptor_class_instance.instance_values.slice(*all_columns)
+    attr_encrypted_column_names.reduce({}) do |memo, column|
+      memo[column] = encryptor_class_instance.instance_values.fetch(column, nil)
+      memo[column] = nil if column_names_to_nilify.include?(column)
+      memo
+    end
   end
 
   def encrypted_column(attribute_name, opts)
@@ -110,6 +110,18 @@ class Transcryptor::Instance
     end
 
     column_names
+  end
+
+  def attr_encrypted_column_names(attribute_name, new_opts, old_opts)
+    (column_names(attribute_name, old_opts) + column_names(attribute_name, new_opts)).uniq
+  end
+
+  def column_names_with_extra(attribute_name, old_opts, transcryptor_opts)
+    (column_names(attribute_name, old_opts) + transcryptor_opts[:extra_columns]).uniq
+  end
+
+  def column_names_to_nilify(attribute_name, new_opts, old_opts)
+    column_names(attribute_name, old_opts) - column_names(attribute_name, new_opts)
   end
 
   def attr_encrypted_default_options
