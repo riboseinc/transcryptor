@@ -1,4 +1,6 @@
 class Transcryptor::Instance
+  include Transcryptor::AttrEncrypted::ColumnNames
+
   attr_reader :adapter
 
   def initialize(adapter)
@@ -38,90 +40,35 @@ class Transcryptor::Instance
   # * +:after_encrypt+ - post-hook after encryption and updating row (default: -> (_decrypted_value, _new_row, _encryptor_class) {})
 
   def re_encrypt(table_name, attribute_name, old_opts, new_opts, transcryptor_opts = {})
-    old_opts.reverse_merge!(attr_encrypted_default_options)
-    new_opts.reverse_merge!(attr_encrypted_default_options)
-    transcryptor_opts.reverse_merge!(transcryptor_default_options)
+    prepare_opts(old_opts, new_opts, transcryptor_opts)
 
-    column_names_with_extra =  column_names_with_extra(attribute_name, old_opts, transcryptor_opts)
-    attr_encrypted_column_names = attr_encrypted_column_names(attribute_name, new_opts, old_opts)
-    column_names_to_nilify = column_names_to_nilify(attribute_name, new_opts, old_opts)
+    decryptor, encryptor =
+      initialize_encryption_classes(attribute_name, old_opts, new_opts, transcryptor_opts)
 
-    decryptor_class = attr_encrypted_poro_class(attribute_name, old_opts, column_names_with_extra)
-    encryptor_class = attr_encrypted_poro_class(attribute_name, new_opts, column_names_with_extra)
+    column_names_with_extra_columns =
+      column_names_with_extra_columns(attribute_name, old_opts, transcryptor_opts)
 
-    adapter.select_rows(table_name, column_names_with_extra).each do |old_row|
-      transcryptor_opts[:before_decrypt].call(old_row, decryptor_class)
+    @adapter.select_rows(table_name, column_names_with_extra_columns).each do |old_row|
+      decrypted_value = decryptor.decrypt(old_row)
+      new_row = encryptor.encrypt(decrypted_value, old_row)
 
-      decrypted_value = decrypt_value(old_row, attribute_name, decryptor_class)
-      new_row = encrypt_value(decrypted_value, old_row, attribute_name, encryptor_class, attr_encrypted_column_names, column_names_to_nilify)
-
-      adapter.update_row(table_name, old_row, new_row)
-
-      transcryptor_opts[:after_encrypt].call(decrypted_value, new_row, encryptor_class)
+      @adapter.update_row(table_name, old_row, new_row)
     end
   end
 
   private
 
-  def attr_encrypted_poro_class(attribute_name, attr_encrypted_opts, attributes)
-    Class.new(Transcryptor::Poro) do
-      attr_accessor(*attributes)
-      attr_encrypted(attribute_name, attr_encrypted_opts)
-    end
+  def prepare_opts(old_opts, new_opts, transcryptor_opts)
+    old_opts.reverse_merge!(attr_encrypted_default_options)
+    new_opts.reverse_merge!(attr_encrypted_default_options)
+    transcryptor_opts.reverse_merge!(transcryptor_default_options)
   end
 
-  def decrypt_value(row, attribute_name, decryptor_class)
-    decryptor_class.new(row).send(attribute_name)
-  end
-
-  def encrypt_value(value, old_row, attribute_name, encryptor_class, attr_encrypted_column_names, column_names_to_nilify)
-    encryptor_class_instance = encryptor_class.new(old_row)
-    encryptor_class_instance.send("#{attribute_name}=", value)
-
-    attr_encrypted_column_names.reduce({}) do |memo, column|
-      memo[column] = encryptor_class_instance.instance_values.fetch(column, nil)
-      memo[column] = nil if column_names_to_nilify.include?(column)
-      memo
-    end
-  end
-
-  def encrypted_column(attribute_name, opts)
-    "#{opts[:prefix]}#{attribute_name}#{opts[:suffix]}"
-  end
-
-  def encrypted_column_iv(attribute_name, opts)
-    "#{opts[:prefix]}#{attribute_name}#{opts[:suffix]}_iv"
-  end
-
-  def encrypted_column_salt(attribute_name, opts)
-    "#{opts[:prefix]}#{attribute_name}#{opts[:suffix]}_salt"
-  end
-
-  def column_names(attribute_name, opts)
-    column_names = [encrypted_column(attribute_name, opts)]
-
-    case opts[:mode].to_sym
-    when :per_attribute_iv
-      column_names << encrypted_column_iv(attribute_name, opts)
-    when :per_attribute_iv_and_salt
-      column_names << encrypted_column_iv(attribute_name, opts)
-      column_names << encrypted_column_salt(attribute_name, opts)
-    else
-    end
-
-    column_names
-  end
-
-  def attr_encrypted_column_names(attribute_name, new_opts, old_opts)
-    (column_names(attribute_name, old_opts) + column_names(attribute_name, new_opts)).uniq
-  end
-
-  def column_names_with_extra(attribute_name, old_opts, transcryptor_opts)
-    (column_names(attribute_name, old_opts) + transcryptor_opts[:extra_columns]).uniq
-  end
-
-  def column_names_to_nilify(attribute_name, new_opts, old_opts)
-    column_names(attribute_name, old_opts) - column_names(attribute_name, new_opts)
+  def initialize_encryption_classes(attribute_name, old_opts, new_opts, transcryptor_opts)
+    [
+      Transcryptor::Encryption::Decryptor.new(attribute_name, old_opts, new_opts, transcryptor_opts),
+      Transcryptor::Encryption::Encryptor.new(attribute_name, old_opts, new_opts, transcryptor_opts)
+    ]
   end
 
   def attr_encrypted_default_options
