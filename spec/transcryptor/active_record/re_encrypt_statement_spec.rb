@@ -9,9 +9,7 @@ ActiveRecord::Base.connection.create_table(:active_record_re_encrypt_statement_s
   t.string   :encrypted_column_1_iv
 end
 
-class ActiveRecordReEncryptStatementSpec < ActiveRecord::Base
-  attr_encrypted :column_1, key: '1qwe1qwe1qwe1qwe1qwe1qwe1qwe1qwe'
-end
+class ActiveRecordReEncryptStatementSpec < ActiveRecord::Base; end
 
 describe Transcryptor::ActiveRecord::ReEncryptStatement do
 
@@ -22,7 +20,19 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
     )
   end
 
+  let(:table_class) { ActiveRecordReEncryptStatementSpec }
+  let(:table_name) { :active_record_re_encrypt_statement_specs }
+  let(:column_name) { :column_1 }
+
   before do
+    table_class.delete_all
+
+    table_class.send(
+      :attr_encrypted,
+      column_name,
+      key: old_key
+    )
+
     allow(migration).to receive(:up) do
       migration.instance_exec(up_params) do |params|
         re_encrypt_column(*params)
@@ -35,34 +45,45 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
       end
     end
 
+    5.times do
+      table_class.create!(column_1: expected_value)
+    end
+
     migration.migrate(:up)
-    ActiveRecordReEncryptStatementSpec.encrypted_attributes[:column_1][:key] = new_key
+    table_class.encrypted_attributes[column_name][:key] = new_key
   end
 
   let(:expected_value) { 'my_value' }
-  let(:record) { ActiveRecordReEncryptStatementSpec.create!(column_1: expected_value) }
+  let(:record) { table_class.last }
 
   after do
+    table_class.send(
+      :attr_encrypted,
+      column_name,
+      key: new_key
+    )
     migration.migrate(:down)
-    ActiveRecordReEncryptStatementSpec.delete_all
   end
+
+  let(:old_key) { '1qwe1qwe1qwe1qwe1qwe1qwe1qwe1qwe' }
+  let(:old_configs) { { key: old_key } }
 
   context 'with no extra columns specified' do
     let(:new_key) { '2asd2asd2asd2asd2asd2asd2asd2asd' }
     let(:up_params) do
       [
-        :active_record_re_encrypt_statement_specs,
-        :column_1,
-        { key: '1qwe1qwe1qwe1qwe1qwe1qwe1qwe1qwe' },
-        { key: new_key }
+        table_name,
+        column_name,
+        old_configs,
+        { key: new_key },
       ]
     end
     let(:down_params) do
       [
-        :active_record_re_encrypt_statement_specs,
-        :column_1,
+        table_name,
+        column_name,
         { key: new_key },
-        { key: '1qwe1qwe1qwe1qwe1qwe1qwe1qwe1qwe' }
+        old_configs,
       ]
     end
 
@@ -75,19 +96,19 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
     let(:new_key) { '7asd7asd7asd7asd7asd7asd7asd7asd' }
     let(:up_params) do
       [
-        :active_record_re_encrypt_statement_specs,
-        :column_1,
-        { key: '1qwe1qwe1qwe1qwe1qwe1qwe1qwe1qwe' },
+        table_name,
+        column_name,
+        old_configs,
         { key: ->(o) { '2asd2asd2asd2asd2asd2asd2asd2asd'.gsub(/2/, o.lucky_integer.to_s) } },
         extra_columns: %i[lucky_integer],
       ]
     end
     let(:down_params) do
       [
-        :active_record_re_encrypt_statement_specs,
-        :column_1,
-        { key: ->(o) { new_key } },
-        { key: '1qwe1qwe1qwe1qwe1qwe1qwe1qwe1qwe' },
+        table_name,
+        column_name,
+        { key: ->(_o) { new_key } },
+        old_configs,
         extra_columns: %i[lucky_integer],
       ]
     end
@@ -98,42 +119,54 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
   end
 
   context 'with extra columns and hooks specified' do
-    let(:before_decrypt_probe)  { spy(:before_decrypt_probe)  }
-    let(:after_encrypt_probe) { spy(:after_encrypt_probe) }
+
+    let(:before_decrypt_probe) { spy(:before_decrypt_probe) }
+    let(:after_encrypt_probe)  { spy(:after_encrypt_probe)  }
     let(:new_key) { '7asd7asd7asd7asd7asd7asd7asd7asd' }
+
     let(:up_params) do
       [
-        :active_record_re_encrypt_statement_specs,
-        :column_1,
-        { key: '1qwe1qwe1qwe1qwe1qwe1qwe1qwe1qwe' },
+        table_name,
+        column_name,
+        old_configs,
         { key: ->(o) { '2asd2asd2asd2asd2asd2asd2asd2asd'.gsub(/2/, o.lucky_integer.to_s) } },
         extra_columns: %i[lucky_integer],
-        before_decrypt:  -> (old_row, decryptor_class) { before_decrypt_probe.call(old_row, decryptor_class) },
-        after_encrypt: -> (new_row, encryptor_class) { after_encrypt_probe.call(new_row, encryptor_class) }
+        before_decrypt: before_decrypt,
+        after_encrypt:  after_encrypt,
       ]
     end
+
     let(:down_params) do
       [
-        :active_record_re_encrypt_statement_specs,
-        :column_1,
-        { key: ->(o) { new_key } },
-        { key: '1qwe1qwe1qwe1qwe1qwe1qwe1qwe1qwe' },
-        extra_columns: %i[lucky_integer]
+        table_name,
+        column_name,
+        { key: ->(_o) { new_key } },
+        old_configs,
+        extra_columns: %i[lucky_integer],
       ]
+    end
+
+    let(:before_decrypt) do
+      -> (old_row, decryptor_class) { before_decrypt_probe.call(old_row, decryptor_class) }
+    end
+
+    let(:after_encrypt) do
+      -> (decrypted_value, new_row, encryptor_class) { after_encrypt_probe.call(decrypted_value, new_row, encryptor_class) }
     end
 
     it 'calls before_decrypt hook' do
       expect(before_decrypt_probe).to have_received(:call).with(
-        hash_including(:column_1),
+        hash_including("encrypted_#{column_name}", "encrypted_#{column_name}_iv"),
         kind_of(Class)
-      ).exactly(ActiveRecordReEncryptStatementSpec.count).times
+      ).exactly(table_class.count).times
     end
 
     it 'calls after_encrypt hook' do
       expect(after_encrypt_probe).to have_received(:call).with(
-        hash_including(:column_1),
+        kind_of(String),
+        hash_including("encrypted_#{column_name}", "encrypted_#{column_name}_iv"),
         kind_of(Class)
-      ).exactly(ActiveRecordReEncryptStatementSpec.count).times
+      ).exactly(table_class.count).times
     end
   end
 end

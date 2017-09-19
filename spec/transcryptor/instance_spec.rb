@@ -34,52 +34,61 @@ describe Transcryptor::Instance do
   end
 
   describe '#re_encrypt' do
+
+    let(:column_name)  { :column_1 }
+    let(:table_name)   { :instance_specs }
+    let(:original_key) { 'column_1_key_qwe_qwe_qwe_qwe_qwe' }
+
+    let(:old_configs) do
+      { key: ->(poro) { original_key } }
+    end
+
+    let(:attr_encrypted_config_before) do
+      InstanceSpec.send(
+        :attr_encrypted, column_name,
+        old_configs
+      )
+    end
+
+    let(:attr_encrypted_config_after) do
+      InstanceSpec.send(
+        :attr_encrypted, column_name,
+        new_configs
+      )
+    end
+
     context 'from per_attribute_iv to per_attribute_iv_and_salt' do
-      let(:attr_encrypted_config_before) do
-        InstanceSpec.send(
-          :attr_encrypted, :column_1,
-          key: 'column_1_key_qwe_qwe_qwe_qwe_qwe', mode: :per_attribute_iv
-        )
+      let(:new_configs) do
+        { key: 'column_1_key_asd_asd_asd_asd_asd', mode: :per_attribute_iv_and_salt }
       end
 
-      let(:attr_encrypted_config_after) do
-        InstanceSpec.send(
-          :attr_encrypted, :column_1,
-          key: 'column_1_key_asd_asd_asd_asd_asd', mode: :per_attribute_iv_and_salt
-        )
-      end
-
-      it 're-encrypts attribute' do
+      it 'populates salt column' do
         subject.re_encrypt(
-          'instance_specs',
-          :column_1,
-          { key: 'column_1_key_qwe_qwe_qwe_qwe_qwe', mode: :per_attribute_iv },
-          { key: 'column_1_key_asd_asd_asd_asd_asd', mode: :per_attribute_iv_and_salt }
+          table_name,
+          column_name,
+          old_configs,
+          new_configs,
         )
+        expect(InstanceSpec.pluck(:encrypted_column_1_salt)).to_not include(nil)
       end
     end
 
     context 'from per_attribute_iv_and_salt to per_attribute_iv' do
-      let(:attr_encrypted_config_before) do
-        InstanceSpec.send(
-          :attr_encrypted, :column_1,
-          key: 'column_1_key_qwe_qwe_qwe_qwe_qwe', mode: :per_attribute_iv_and_salt
-        )
+
+      let(:old_configs) do
+        { key: original_key, mode: :per_attribute_iv_and_salt }
       end
 
-      let(:attr_encrypted_config_after) do
-        InstanceSpec.send(
-          :attr_encrypted, :column_1,
-          key: 'column_1_key_asd_asd_asd_asd_asd', mode: :per_attribute_iv
-        )
+      let(:new_configs) do
+        { key: 'column_1_key_asd_asd_asd_asd_asd', mode: :per_attribute_iv }
       end
 
       it 're-encrypts attribute' do
         subject.re_encrypt(
-          'instance_specs',
-          :column_1,
-          { key: 'column_1_key_qwe_qwe_qwe_qwe_qwe', mode: :per_attribute_iv_and_salt },
-          { key: 'column_1_key_asd_asd_asd_asd_asd', mode: :per_attribute_iv }
+          table_name,
+          column_name,
+          old_configs,
+          new_configs,
         )
         expect(InstanceSpec.pluck(:encrypted_column_1_salt)).to eq([nil, nil, nil])
       end
@@ -87,55 +96,79 @@ describe Transcryptor::Instance do
 
     context 'using lambda expression as a key' do
       context 'with no references to other columns' do
-        let(:attr_encrypted_config_before) do
-          InstanceSpec.send(
-            :attr_encrypted, :column_1,
-            key: ->(_instance_spec) { 'column_1_key_qwe_qwe_qwe_qwe_qwe' }
-          )
+
+        let(:old_configs) do
+          { key: ->(_instance_spec) { original_key } }
         end
 
-        let(:attr_encrypted_config_after) do
-          InstanceSpec.send(
-            :attr_encrypted, :column_1,
-            key: ->(_instance_spec) { 'column_1_key_asd_asd_asd_asd_asd' }
-          )
+        let(:new_configs) do
+          { key: ->(_instance_spec) { 'column_1_key_asd_asd_asd_asd_asd' } }
         end
 
         it 're-encrypts attribute' do
           subject.re_encrypt(
-            'instance_specs',
-            :column_1,
-            { key: ->(_instance_spec) { 'column_1_key_qwe_qwe_qwe_qwe_qwe' } },
-            { key: ->(_instance_spec) { 'column_1_key_asd_asd_asd_asd_asd' } }
+            table_name,
+            column_name,
+            old_configs,
+            new_configs,
           )
         end
       end
 
       context 'with references to other columns' do
-        let(:attr_encrypted_config_before) do
-          InstanceSpec.send(
-            :attr_encrypted, :column_1,
-            key: ->(_instance_spec) { 'column_1_key_qwe_qwe_qwe_qwe_qwe' }
-          )
+
+        let(:old_configs) do
+          { key: ->(_instance_spec) { original_key } }
         end
 
-        let(:attr_encrypted_config_after) do
-          InstanceSpec.send(
-            :attr_encrypted, :column_1,
-            key: ->(_instance_spec) { 'column_1_key_asd_asd_asd_asd_as7' }
-          )
+        let(:new_configs) do
+          {
+            key: proc do |poro|
+              expect(poro.lucky_integer).to_not be_nil
+              "column_1_key_asd_asd_asd_asd_as#{poro.lucky_integer}"
+            end
+          }
+        end
+
+        let(:transcryptor_opts) do
+          {
+            extra_columns: %i[lucky_integer lucky_string],
+          }
         end
 
         it 're-encrypts attribute' do
           subject.re_encrypt(
-            'instance_specs',
-            :column_1,
-            { key: ->(poro) { "column_1_key_qwe_qwe_qwe_qwe_qwe" } },
-            { key: ->(poro) { "column_1_key_asd_asd_asd_asd_as#{poro.lucky_integer}" } },
-            extra_columns: %i[lucky_integer lucky_string]
+            table_name,
+            column_name,
+            old_configs,
+            new_configs,
+            transcryptor_opts
           )
         end
+
+        context 'and with hooks to check encrypted value equality' do
+
+          it 're-encrypts attribute' do
+            subject.re_encrypt(
+              table_name,
+              column_name,
+              old_configs,
+              new_configs,
+              transcryptor_opts.merge(
+                posthook: proc do |decrypted_value, new_row, encryptor_class|
+                  begin
+                    de_encrypted_value =
+                      encryptor_class.new(new_row).send(column_name)
+                  rescue => e
+                    raise e if de_encrypted_value != decrypted_value
+                  end
+                end
+              )
+            )
+          end
+        end
       end
+
     end
   end
 end
