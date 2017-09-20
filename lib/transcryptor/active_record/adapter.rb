@@ -1,6 +1,6 @@
 class Transcryptor::ActiveRecord::Adapter < Transcryptor::AbstractAdapter
-  def select_rows(table_name, columns)
-    query = select_query(table_name, columns)
+  def select_rows(table_name, columns, selection_criteria = nil)
+    query = select_query(table_name, columns, selection_criteria)
 
     connection.exec_query(query).to_hash
   end

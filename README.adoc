@@ -91,6 +91,35 @@ end
 migrate_up!
 ----
 
+=== Additional options
+
+Taking `ActiveRecord` as an example (the following applies to `DataMapper` as well):
+
+==== `where`
+
+Specify an SQL string (or a `proc` returning one) inside the `where` option to
+limit the range on which transcryption is run:
+
+[source,ruby]
+----
+class ReEncryptUserSsn < ActiveRecord::Migration
+  def up
+    re_encrypt_column :users, :ssn,
+      { # old configuration of attr_encrypted for :ssn column
+        key: ->(u) { ENV['USER_SSN_ENC_KEY'] },
+        mode: :per_attribute_iv_and_salt,
+        algorithm: 'aes-256-gcm'
+      },
+      { # new configuration of attr_encrypted for :ssn column
+        key: ->(u) { ENV['NEW_USER_SSN_ENC_KEY'] },
+        mode: :per_attribute_iv,
+        algorithm: 'aes-256-cbc'
+      },
+      where: -> { "encrypted_ssn IS NOT NULL" }
+  end
+end
+----
+
 == Zero Downtime Migration
 
 === ActiveRecord

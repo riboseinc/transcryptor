@@ -4,6 +4,7 @@ require 'spec_helper'
 require 'securerandom'
 
 ActiveRecord::Base.connection.create_table(:active_record_re_encrypt_statement_specs) do |t|
+  t.string   :lucky_string, default: ""
   t.integer  :lucky_integer, default: 7
   t.string   :encrypted_column_1
   t.string   :encrypted_column_1_iv
@@ -47,6 +48,10 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
 
     5.times do
       table_class.create!(column_1: expected_value)
+    end
+
+    5.times do
+      table_class.create!(column_1: expected_value, lucky_string: 'lucky!')
     end
 
     migration.migrate(:up)
@@ -130,9 +135,10 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
         column_name,
         old_configs,
         { key: ->(o) { '2asd2asd2asd2asd2asd2asd2asd2asd'.gsub(/2/, o.lucky_integer.to_s) } },
-        extra_columns: %i[lucky_integer],
+        extra_columns:  extra_columns,
         before_decrypt: before_decrypt,
         after_encrypt:  after_encrypt,
+        where:          selection_criteria,
       ]
     end
 
@@ -142,7 +148,8 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
         column_name,
         { key: ->(_o) { new_key } },
         old_configs,
-        extra_columns: %i[lucky_integer],
+        extra_columns: extra_columns,
+        where:         selection_criteria,
       ]
     end
 
@@ -152,6 +159,14 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
 
     let(:after_encrypt) do
       -> (decrypted_value, new_row, encryptor_class) { after_encrypt_probe.call(decrypted_value, new_row, encryptor_class) }
+    end
+
+    let(:extra_columns) do
+      %i[lucky_integer lucky_string]
+    end
+
+    let(:selection_criteria) do
+      proc { '' }
     end
 
     it 'calls before_decrypt hook' do
@@ -167,6 +182,26 @@ describe Transcryptor::ActiveRecord::ReEncryptStatement do
         hash_including("encrypted_#{column_name}", "encrypted_#{column_name}_iv"),
         kind_of(Class)
       ).exactly(table_class.count).times
+    end
+
+    context 'targeting specific rows' do
+
+      let(:selection_criteria) do
+        proc { 'lucky_string LIKE "lucky%"' }
+      end
+
+      it 'transcrypts them only' do
+
+        expect(before_decrypt_probe).to have_received(:call).with(
+          hash_including(
+            "encrypted_#{column_name}",
+            "encrypted_#{column_name}_iv",
+            'lucky_string' => 'lucky!',
+          ),
+          kind_of(Class)
+        ).exactly(table_class.where(lucky_string: 'lucky!').count).times
+
+      end
     end
   end
 end

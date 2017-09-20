@@ -48,7 +48,10 @@ class Transcryptor::Instance
     column_names_with_extra_columns =
       column_names_with_extra_columns(attribute_name, old_opts, transcryptor_opts)
 
-    @adapter.select_rows(table_name, column_names_with_extra_columns).each do |old_row|
+    selection_criteria =
+      prepare_selection_criteria(transcryptor_opts)
+
+    @adapter.select_rows(table_name, column_names_with_extra_columns, selection_criteria).each do |old_row|
       decrypted_value = decryptor.decrypt(old_row)
       new_row = encryptor.encrypt(decrypted_value, old_row)
 
@@ -62,6 +65,10 @@ class Transcryptor::Instance
     old_opts.reverse_merge!(attr_encrypted_default_options)
     new_opts.reverse_merge!(attr_encrypted_default_options)
     transcryptor_opts.reverse_merge!(transcryptor_default_options)
+  end
+
+  def prepare_selection_criteria(transcryptor_opts)
+    transcryptor_opts[:where].call
   end
 
   def initialize_encryption_classes(attribute_name, old_opts, new_opts, transcryptor_opts)
@@ -95,9 +102,10 @@ class Transcryptor::Instance
 
   def transcryptor_default_options
     {
+      where: ->() {},
       extra_columns: [],
-      before_decrypt: -> (_old_row, _decryptor_class) {},
-      after_encrypt: -> (_decrypted_value, _new_row, _encryptor_class) {},
+      before_decrypt: ->(_old_row, _decryptor_class) {},
+      after_encrypt: ->(_decrypted_value, _new_row, _encryptor_class) {},
     }
   end
 end
