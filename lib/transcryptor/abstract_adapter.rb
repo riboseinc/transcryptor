@@ -5,7 +5,7 @@ class Transcryptor::AbstractAdapter
     @connection = connection
   end
 
-  def select_rows(_table_name, _columns)
+  def select_rows(_table_name, _columns, _selection_criteria = nil)
     raise NotImplementedError, "#{self.class}#select_rows not implemented"
   end
 
@@ -15,10 +15,21 @@ class Transcryptor::AbstractAdapter
 
   private
 
-  def select_query(table_name, columns)
+  def select_query(table_name, columns, selection_criteria = nil)
+    where_clause = case selection_criteria
+                   when Proc then selection_criteria.call
+                   else selection_criteria
+                   end
     <<-SQL
       SELECT #{columns.join(', ')}
       FROM #{table_name}
+      #{
+        if selection_criteria.blank?
+          ''
+        else
+          "WHERE #{where_clause}"
+        end
+      }
     SQL
   end
 

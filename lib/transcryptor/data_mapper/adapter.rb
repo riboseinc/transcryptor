@@ -1,6 +1,6 @@
 class Transcryptor::DataMapper::Adapter < Transcryptor::AbstractAdapter
-  def select_rows(table_name, columns)
-    query = select_query(table_name, columns)
+  def select_rows(table_name, columns, selection_criteria = nil)
+    query = select_query(table_name, columns, selection_criteria)
 
     connection.select(query).map { |record| record.to_h.stringify_keys }
   end

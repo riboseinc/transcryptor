@@ -18,13 +18,33 @@ describe Transcryptor::DataMapper::Adapter do
 
   let(:model_class) { DataMapperAdapterSpec }
 
-  before { model_class.create!(column_1: 'value', column_2: 1) }
+  before { 5.times { |i| model_class.create!(column_1: 'value', column_2: i) } }
   after { model_class.destroy }
 
   describe '#select_rows' do
     it 'returns rows as an array of hashes' do
       rows = subject.select_rows('data_mapper_adapter_specs', ['column_1', 'column_2'])
-      expect(rows).to eq([{ 'column_1' => 'value', 'column_2' => 1 }])
+
+      expect(rows.first).to eq({ 'column_1' => 'value', 'column_2' => 0 })
+    end
+
+    context 'with selection_criteria' do
+      it 'restricts according to :where clause' do
+        rows = subject.select_rows(
+          'data_mapper_adapter_specs',
+          ['column_1', 'column_2'],
+          proc {
+            "column_2 < 3"
+          }
+        )
+        column_2s = rows.map { |row| row['column_2'] }
+        expect(column_2s).to     include 0
+        expect(column_2s).to     include 1
+        expect(column_2s).to     include 2
+        expect(column_2s).to_not include 3
+        expect(column_2s).to_not include 4
+        expect(column_2s).to_not include 5
+      end
     end
   end
 
@@ -34,7 +54,7 @@ describe Transcryptor::DataMapper::Adapter do
     it 'updates row with given values' do
       subject.update_row(
         'data_mapper_adapter_specs',
-        { 'column_1' => 'value', 'column_2' => 1 },
+        { 'column_1' => 'value', 'column_2' => 0 },
         { 'column_1' => 'updated', 'column_2' => 2 }
       )
 
