@@ -233,3 +233,24 @@ conduct.
 
 The gem is available as open source under the terms of the
 http://opensource.org/licenses/MIT[MIT License].
+
+== WIP: Zero-Downtime with versioning
+
+Assuming we have:
+- encrypted_ssn, encrypted_ssn_iv columns, also: ssn_version
+- before migration `encrypted_ssn_version` should be populated with current version (i.e. `ALTER TABLE users ADD encrypted_ssn_version VARCHAR(20) DEFAULT '20180401000000' NOT NULL;`)
+- (to the above: make sure new fields always have the newest schema version)
+- there should be a migration file in `db/transcryptor/migrate.rb` containing history of migrations
+
+Question: How are we going to treat multiple models / columns ?
+Answer: Using `define_encryption` in `transcryptor/migrate.rb` we store a list of versions with actual encryption. Upon migration code, we look at this schema and update the field to the latest one.
+
+# Plan for zero-downtime:
+1) Transcryptor reads db/transcryptor directory a list of migrations
+2) On Rails loading it loads the migration schema to the memory
+3) We add hook around `attr_encrypted` gem, to check if the field has actual version or not
+4) If it has, use `super`
+5) If not, decrypt with options provided in `schema` (tm), re-encrypt with latest version of schema, and call `super` again
+
+Idea #1: Use procs to redefine existing keys or procs with migrated ones (?)
+
