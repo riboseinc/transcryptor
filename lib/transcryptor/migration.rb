@@ -62,13 +62,7 @@ module Transcryptor
       # user.ssn_20180401000002
       def patch_models!
         migrations.each do |model_class, fields|
-          fields.each do |field, versions|
-            versions.each do |version, opts|
-              next if version == :latest_version
-
-              generate_versioned_fields!(model_class, field, version, opts)
-            end
-          end
+          generate_versioned_fields_if_needed!(model_class, fields)
 
           model_class.instance_eval do
             after_find :migrate_encrypted_fields!
@@ -80,17 +74,24 @@ module Transcryptor
         end
       end
 
+      def generate_versioned_fields_if_needed!(model_class, fields)
+        fields.each do |field, versions|
+          versions.each do |version, opts|
+            next if version == :latest_version
+
+            generate_versioned_fields!(model_class, field, version, opts)
+          end
+        end
+      end
+
       def generate_versioned_fields!(model_class, field, version, opts)
         versioned_field = "#{field}_#{version}".to_sym
         model_class.instance_eval do
           attr_encrypted versioned_field, **opts
         end
 
-        current_opts   = model_class.encrypted_attributes[field]
-        versioned_opts = model_class.encrypted_attributes[versioned_field]
-
-        curr_field_name = get_field_name(field, current_opts)
-        vers_field_name = get_field_name(versioned_field, versioned_opts)
+        curr_field_name = get_field_name(field, model_class)
+        vers_field_name = get_field_name(versioned_field, model_class)
 
         redefine_versioned_fields!(
           model_class, vers_field_name, curr_field_name
@@ -101,9 +102,7 @@ module Transcryptor
                                      vers_field_name,
                                      curr_field_name)
         model_class.class_eval do
-          define_method(vers_field_name) do
-            public_send(curr_field_name)
-          end
+          define_method(vers_field_name) { public_send(curr_field_name) }
 
           define_method("#{vers_field_name}_iv") do
             public_send("#{curr_field_name}_iv")
@@ -115,7 +114,8 @@ module Transcryptor
         end
       end
 
-      def get_field_name(field, opts)
+      def get_field_name(field, model_class)
+        opts = model_class.encrypted_attributes[field]
         "#{opts[:prefix]}#{field}#{opts[:suffix]}"
       end
     end
