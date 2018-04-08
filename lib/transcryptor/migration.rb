@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'transcryptor/migration/migrate_encrypted_fields'
+
 module Transcryptor
   # Allows ZeroDowntime migration using version columns.
   # Usage example:
@@ -58,39 +60,13 @@ module Transcryptor
       # user.ssn_20180401000000
       # user.ssn_20180401000001
       # user.ssn_20180401000002
-      # rubocop:disable Metrics/MethodLength
-      # rubocop:disable Metrics/BlockLength
-      # rubocop:disable Metrics/AbcSize
       def patch_models!
         migrations.each do |model_class, fields|
           fields.each do |field, versions|
             versions.each do |version, opts|
               next if version == :latest_version
 
-              versioned_field = "#{field}_#{version}".to_sym
-              model_class.instance_eval do
-                attr_encrypted versioned_field, **opts
-              end
-
-              current_opts   = model_class.encrypted_attributes[field]
-              versioned_opts = model_class.encrypted_attributes[versioned_field]
-
-              curr_field_name = get_field_name(field, current_opts)
-              vers_field_name = get_field_name(versioned_field, versioned_opts)
-
-              model_class.class_eval do
-                define_method(vers_field_name) do
-                  public_send(curr_field_name)
-                end
-
-                define_method("#{vers_field_name}_iv") do
-                  public_send("#{curr_field_name}_iv")
-                end
-
-                define_method("#{vers_field_name}_salt") do
-                  public_send("#{curr_field_name}_salt")
-                end
-              end
+              generate_versioned_fields!(model_class, field, version, opts)
             end
           end
 
@@ -99,30 +75,45 @@ module Transcryptor
           end
 
           model_class.class_eval do
-            def migrate_encrypted_fields!
-              migrated_fields = Transcryptor::Migration.migrations[self.class]
-
-              migrated_fields.each do |field, versions|
-                latest_v  = versions[:latest_version].to_i
-                current_v = public_send("#{field}_version").to_i
-                next if latest_v == current_v
-
-                opts = encrypted_attributes[field]
-                value = public_send("#{field}_#{current_v}")
-                encrypted_value = encrypt(field, value)
-                public_send("#{opts[:prefix]}#{field}=", encrypted_value)
-                public_send("#{field}_version=", latest_v)
-              end
-
-              save(validate: false)
-            end
-            private :migrate_encrypted_fields!
+            include Transcryptor::Migration::MigrateEncryptedFields
           end
         end
       end
-      # rubocop:enable Metrics/MethodLength
-      # rubocop:enable Metrics/BlockLength
-      # rubocop:enable Metrics/AbcSize
+
+      def generate_versioned_fields!(model_class, field, version, opts)
+        versioned_field = "#{field}_#{version}".to_sym
+        model_class.instance_eval do
+          attr_encrypted versioned_field, **opts
+        end
+
+        current_opts   = model_class.encrypted_attributes[field]
+        versioned_opts = model_class.encrypted_attributes[versioned_field]
+
+        curr_field_name = get_field_name(field, current_opts)
+        vers_field_name = get_field_name(versioned_field, versioned_opts)
+
+        redefine_versioned_fields!(
+          model_class, vers_field_name, curr_field_name
+        )
+      end
+
+      def redefine_versioned_fields!(model_class,
+                                     vers_field_name,
+                                     curr_field_name)
+        model_class.class_eval do
+          define_method(vers_field_name) do
+            public_send(curr_field_name)
+          end
+
+          define_method("#{vers_field_name}_iv") do
+            public_send("#{curr_field_name}_iv")
+          end
+
+          define_method("#{vers_field_name}_salt") do
+            public_send("#{curr_field_name}_salt")
+          end
+        end
+      end
 
       def get_field_name(field, opts)
         "#{opts[:prefix]}#{field}#{opts[:suffix]}"
