@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'transcryptor/migration/migrate_encrypted_fields'
+require 'transcryptor/migration/specify_latest_version'
 
 module Transcryptor
   # Allows ZeroDowntime migration using version columns.
@@ -49,7 +50,7 @@ module Transcryptor
       def evaluate_latest_versions!
         @migrations.each do |model_class, fields|
           fields.each do |field, versions|
-            @migrations[model_class][field][:latest_version] =
+            @migrations[model_class][field][:latest_version] ||=
               versions.keys.max
           end
         end
@@ -66,10 +67,12 @@ module Transcryptor
 
           model_class.instance_eval do
             after_find :migrate_encrypted_fields!
+            after_initialize :specify_latest_version!, if: :new_record?
           end
 
           model_class.class_eval do
             include Transcryptor::Migration::MigrateEncryptedFields
+            include Transcryptor::Migration::SpecifyLatestVersion
           end
         end
       end
