@@ -3,7 +3,6 @@
 module Transcryptor
 end
 
-require 'pry'
 require 'transcryptor/version'
 require 'transcryptor/abstract_adapter'
 require 'transcryptor/active_record' if defined?(::ActiveRecord)
@@ -14,5 +13,3 @@ require 'transcryptor/attr_encrypted'
 require 'transcryptor/encryption'
 require 'transcryptor/instance'
 require 'transcryptor/migration'
-
-# require "/db/transcryptor/migrations"
