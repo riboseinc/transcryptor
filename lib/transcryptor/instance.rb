@@ -78,6 +78,7 @@ class Transcryptor::Instance
     ]
   end
 
+  # rubocop:disable Metrics/MethodLength
   def attr_encrypted_default_options
     {
       prefix:            'encrypted_',
@@ -99,6 +100,7 @@ class Transcryptor::Instance
       algorithm:         'aes-256-gcm',
     }.freeze
   end
+  # rubocop:enable Metrics/MethodLength
 
   def transcryptor_default_options
     {
