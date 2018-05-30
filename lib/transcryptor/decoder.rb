@@ -14,7 +14,6 @@ module Transcryptor
       generate_versioned_fields!(field, current_v, options)
 
       opts = encrypted_attributes[field]
-      public_send("#{field}_#{current_v}")
       value = public_send("#{field}_#{current_v}")
       encrypted_value = encrypt(field, value)
       public_send("#{opts[:prefix]}#{field}=", encrypted_value)
