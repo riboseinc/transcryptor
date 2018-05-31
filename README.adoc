@@ -221,7 +221,7 @@ You can use transcryptor to migrate your encrypted fields in zero downtime
 using https://github.com/riboseinc/versioned_fields[versioned_fields] gem.
 
 Just include `Transcryptor::Decoder` module and use `decode_with_previous_settings`
-to decode your fields with a specific settings:
+to decode your fields with specific settings:
 
 ```ruby
 # db/migrate_versioned_fields/user/ssn.rb
